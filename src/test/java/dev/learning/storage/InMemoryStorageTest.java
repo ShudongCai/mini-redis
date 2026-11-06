@@ -1,4 +1,4 @@
-package dev.learning.Storage;
+package dev.learning.storage;
 
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,6 @@
-package dev.learning.Storage;
+package dev.learning.storage;
 
-import dev.learning.Storage.model.StoredEntry;
+import dev.learning.storage.model.StoredEntry;
 
 import java.util.*;
 
