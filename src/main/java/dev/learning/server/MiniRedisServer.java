@@ -4,11 +4,9 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-public class MiniRedisServer {
-    private final int port;
+public class MiniRedisServer implements AutoCloseable{
     private final ServerSocket serverSocket;
     public MiniRedisServer(int port) throws IOException {
-        this.port = port;
         serverSocket = new ServerSocket(port);
     }
 
@@ -17,14 +15,15 @@ public class MiniRedisServer {
     }
 
     public void acceptAndResponse() throws IOException {
-        try {
-            Socket socket = serverSocket.accept();
+        Socket socket = serverSocket.accept();
 
-            try(socket) {
+        try (socket) {
 
-            }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void close() throws IOException {
+        serverSocket.close();
     }
 }
