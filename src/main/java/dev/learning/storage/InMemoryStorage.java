@@ -36,9 +36,17 @@ public class InMemoryStorage {
         data.put(temp[0], new StoredEntry(values.get(temp[0]), expireTime));
     }
 
+    public void set(String key, String value) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        data.put(key, new StoredEntry(value, null));
+    }
+
     public int del(String key) {
-        if (key == null || key.isBlank()) {
-            throw new IllegalArgumentException("Key should not be blank");
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
         }
 
         if (data.remove(key) != null) {

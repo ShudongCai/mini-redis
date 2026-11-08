@@ -1,11 +1,9 @@
 package dev.learning.command;
 
-import dev.learning.protocol.RespEncoder;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
@@ -20,7 +18,7 @@ public class CommandDispatcher {
         this.storage = storage;
     }
 
-    public RespValue dispatch(RespValue request) throws IOException {
+    public RespValue dispatch(RespValue request) {
         if (request instanceof RespValue.BulkString(byte[] value) && value != null && value.length != 0) {
             String bulkValue = new String(value, StandardCharsets.US_ASCII);
             return executePingCommand(bulkValue);
@@ -31,11 +29,8 @@ public class CommandDispatcher {
         }
 
         if (request instanceof RespValue.ArrayValue(List<RespValue> elements)) {
-            Optional<RespValue> isValid = validateArrayRequest(elements);
-            if (isValid.isPresent()) {
-                return isValid.get();
-            }
-            return executeCommand(elements);
+            Optional<RespValue> validationError = validateArrayRequest(elements);
+            return validationError.orElseGet(() -> executeCommand(elements));
         }
 
         return new RespValue.ErrorValue("The Array Request is invalid");
@@ -53,6 +48,20 @@ public class CommandDispatcher {
         throw new IllegalArgumentException("Invalid command");
     }
 
+    private Optional<String> extractBulkOrSimpleString(RespValue request) {
+        if (request instanceof RespValue.BulkString(byte[] value)
+                && value != null) {
+            return Optional.of(new String(value, StandardCharsets.UTF_8));
+        }
+
+        if (request instanceof RespValue.SimpleString(String value)
+                && value != null) {
+            return Optional.of(value);
+        }
+
+        return Optional.empty();
+    }
+
     private CommandType isValidCommand(String command) {
         for (CommandType type : CommandType.values()) {
             if (command.trim().toLowerCase(Locale.ROOT).equals(type.getValue())) {
@@ -62,7 +71,7 @@ public class CommandDispatcher {
         return null;
     }
 
-    private RespValue executeCommand(List<RespValue> elements) throws IOException {
+    private RespValue executeCommand(List<RespValue> elements) {
         String command = extractCommand(elements);
         CommandType type = isValidCommand(command);
         if (type == null) {
@@ -83,22 +92,89 @@ public class CommandDispatcher {
     }
 
     private RespValue executeGetCommand(List<RespValue> elements) {
-        return new RespValue.ErrorValue("ERR not implemented");
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue(
+                    "ERR wrong number of arguments for 'get' command"
+            );
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key");
+        }
+
+        Optional<String> result = storage.get(key.get());
+
+        if (result.isEmpty()) {
+            return new RespValue.BulkString(null);
+        }
+
+        return new RespValue.BulkString(
+                result.get().getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private RespValue executeExistCommand(List<RespValue> elements) {
-        return new RespValue.ErrorValue("ERR not implemented");
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue(
+                    "ERR wrong number of arguments for 'exists' command"
+            );
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key");
+        }
+
+        boolean result = storage.exists(key.get());
+
+        return new RespValue.IntegerValue(result ? 1 : 0);
     }
 
     private RespValue executeDelCommand(List<RespValue> elements) {
-        return new RespValue.ErrorValue("ERR not implemented");
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue(
+                    "ERR wrong number of arguments for 'del' command"
+            );
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key");
+        }
+
+        int result = storage.del(key.get());
+
+        return new RespValue.IntegerValue(result);
     }
 
     private RespValue executeSetCommand(List<RespValue> elements) {
-        return new RespValue.ErrorValue("ERR not implemented");
+        if (elements.size() != 3) {
+            return new RespValue.ErrorValue(
+                    "ERR wrong number of arguments for 'set' command"
+            );
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> value = extractBulkOrSimpleString(elements.get(2));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key");
+        }
+
+        if (value.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid value");
+        }
+
+        storage.set(key.get(), value.get());
+
+        return new RespValue.SimpleString("OK");
     }
 
-    private Optional<RespValue> validateArrayRequest(List<RespValue> elements) throws IOException {
+    private Optional<RespValue> validateArrayRequest(List<RespValue> elements) {
         if (elements == null) {
             return Optional.of(new RespValue.ErrorValue("The command should not be null"));
         }
@@ -133,7 +209,7 @@ public class CommandDispatcher {
         return Optional.empty();
     }
 
-    private RespValue executePingCommand(String value) throws IOException {
+    private RespValue executePingCommand(String value) {
         if (!value.equalsIgnoreCase("PING")) {
             return new RespValue.ErrorValue("Single Bulk Command only support PING");
         }
