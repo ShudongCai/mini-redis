@@ -10,8 +10,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class MiniRedisServer implements AutoCloseable{
     private final ServerSocket serverSocket;
@@ -32,19 +35,39 @@ public class MiniRedisServer implements AutoCloseable{
         this(6380, respDecoder, respEncoder, dispatcher);
     }
 
+    int getLocalPort() {
+        return serverSocket.getLocalPort();
+    }
+
     public void acceptAndResponse() throws IOException {
         System.out.println("Server listening on port " + serverSocket.getLocalPort());
 
         while (!serverSocket.isClosed()) {
             System.out.println("Waiting for client...");
 
-            Socket socket = serverSocket.accept();
+            try {
+                Socket socket = serverSocket.accept();
 
-            System.out.println("Client connected: " + socket.getRemoteSocketAddress());
+                System.out.println("Client connected: " + socket.getRemoteSocketAddress());
 
-            threadPools.submit(() -> {
-                startConnectionAndExecuteCommands(socket);
-            });
+                try {
+                    threadPools.submit(() -> startConnectionAndExecuteCommands(socket));
+                } catch (RejectedExecutionException e) {
+                    socket.close();
+
+                    if (serverSocket.isClosed()) {
+                        break;
+                    }
+
+                    throw e;
+                }
+            } catch (SocketException e) {
+                if (serverSocket.isClosed()) {
+                    break;
+                }
+                throw e;
+            }
+
         }
     }
 
@@ -71,6 +94,19 @@ public class MiniRedisServer implements AutoCloseable{
 
     @Override
     public void close() throws IOException {
-        serverSocket.close();
+        try {
+            serverSocket.close();
+
+
+        } finally {
+            threadPools.shutdownNow();
+            try {
+                if (!threadPools.awaitTermination(10, TimeUnit.SECONDS)) {
+                    System.err.println("Some client handlers are still running");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }
