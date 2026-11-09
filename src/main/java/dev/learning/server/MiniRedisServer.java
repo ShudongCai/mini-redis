@@ -10,18 +10,22 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MiniRedisServer implements AutoCloseable{
     private final ServerSocket serverSocket;
     private final RespDecoder respDecoder;
     private final RespEncoder respEncoder;
     private final CommandDispatcher dispatcher;
+    private final ExecutorService threadPools;
 
     public MiniRedisServer(int port, RespDecoder respDecoder, RespEncoder respEncoder, CommandDispatcher dispatcher) throws IOException {
         serverSocket = new ServerSocket(port);
         this.respDecoder = respDecoder;
         this.respEncoder = respEncoder;
         this.dispatcher = dispatcher;
+        this.threadPools = Executors.newVirtualThreadPerTaskExecutor();
     }
 
     public MiniRedisServer(RespDecoder respDecoder, RespEncoder respEncoder, CommandDispatcher dispatcher) throws IOException{
@@ -38,7 +42,9 @@ public class MiniRedisServer implements AutoCloseable{
 
             System.out.println("Client connected: " + socket.getRemoteSocketAddress());
 
-            startConnectionAndExecuteCommands(socket);
+            threadPools.submit(() -> {
+                startConnectionAndExecuteCommands(socket);
+            });
         }
     }
 
