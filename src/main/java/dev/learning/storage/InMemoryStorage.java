@@ -3,20 +3,23 @@ package dev.learning.storage;
 import dev.learning.storage.model.StoredEntry;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryStorage {
-    private final Map<String, StoredEntry> data;
+    private final ConcurrentHashMap<String, StoredEntry> data;
 
     public InMemoryStorage() {
-        this.data = new HashMap<>();
+        this.data = new ConcurrentHashMap<>();
     }
 
 
     public Optional<String> get(String key) {
-        if (!data.containsKey(key)) {
+        StoredEntry result = data.get(key);
+
+        if (result == null) {
             return Optional.empty();
         }
-        StoredEntry result = data.get(key);
+
         return Optional.of(result.value());
     }
 
@@ -37,7 +40,7 @@ public class InMemoryStorage {
     }
 
     public void set(String key, String value) {
-        if (key == null) {
+        if (key == null || value == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
 
@@ -57,7 +60,7 @@ public class InMemoryStorage {
     }
 
     public boolean exists(String key) {
-        if (key == null || key.isBlank()) {
+        if (key == null) {
             throw new IllegalArgumentException("Key should not be blank");
         }
 

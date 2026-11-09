@@ -2,8 +2,15 @@ package dev.learning.storage;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class InMemoryStorageTest {
@@ -130,5 +137,72 @@ public class InMemoryStorageTest {
 
         // Assert
         assertEquals(Optional.of(""), storage.get("name"));
+    }
+
+    @Test
+    void shouldStoreAllValuesWhenDifferentKeysAreSetConcurrently() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        int workers = 8;
+        int keysPerWorker = 250;
+        CyclicBarrier start = new CyclicBarrier(workers);
+        List<Future<Void>> writes = new ArrayList<>();
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        try {
+            for (int worker = 0; worker < workers; worker++) {
+                int firstKey = worker * keysPerWorker;
+                writes.add(executor.submit(() -> {
+                    start.await(10, SECONDS);
+                    for (int key = firstKey; key < firstKey + keysPerWorker; key++) {
+                        storage.set("key-" + key, "value-" + key);
+                    }
+                    return null;
+                }));
+            }
+            for (Future<Void> write : writes) {
+                write.get(10, SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        for (int key = 0; key < workers * keysPerWorker; key++) {
+            assertEquals(Optional.of("value-" + key), storage.get("key-" + key), "key-" + key);
+        }
+    }
+
+    @Test
+    void shouldNotFailWhenGetAndDelRunConcurrently() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        int rounds = 2_000;
+        for (int round = 0; round < rounds; round++) {
+            storage.set("key-" + round, "value");
+        }
+        CyclicBarrier startRound = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        try {
+            Future<Void> reads = executor.submit(() -> {
+                for (int round = 0; round < rounds; round++) {
+                    String key = "key-" + round;
+                    startRound.await(10, SECONDS);
+                    storage.get(key).ifPresent(value -> assertEquals("value", value));
+                }
+                return null;
+            });
+            Future<Void> deletes = executor.submit(() -> {
+                for (int round = 0; round < rounds; round++) {
+                    String key = "key-" + round;
+                    startRound.await(10, SECONDS);
+                    assertEquals(1, storage.del(key), key);
+                }
+                return null;
+            });
+
+            reads.get(10, SECONDS);
+            deletes.get(10, SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }
