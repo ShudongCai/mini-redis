@@ -17,11 +17,10 @@ public class InMemoryStorageTest {
     @Test
     void shouldStoreValueWhenKeyIsNew() {
         //Arrange
-        String input = "name Alice";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(input);
+        storage.set("name", "Alice");
 
         //Assert
         assertTrue(storage.get("name").isPresent());
@@ -31,13 +30,11 @@ public class InMemoryStorageTest {
     @Test
     void shouldOverwriteValueWhenKeyAlreadyExists() {
         //Arrange
-        String inputExists = "name Alice";
-        String input = "name Ben";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(inputExists);
-        storage.set(input);
+        storage.set("name", "Alice");
+        storage.set("name", "Ben");
 
         //Assert
         assertTrue(storage.get("name").isPresent());
@@ -45,13 +42,12 @@ public class InMemoryStorageTest {
     }
 
     @Test
-    void shouldPreserveSpacesWhenValueIsQuoted() {
+    void shouldPreserveSpacesInValue() {
         //Arrange
-        String input = "name \"Alice And Ben\"";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(input);
+        storage.set("name", "Alice And Ben");
 
         //Assert
         assertTrue(storage.get("name").isPresent());
@@ -72,9 +68,8 @@ public class InMemoryStorageTest {
     @Test
     void shouldReturnOneWhenExistingKeyIsDeleted() {
         // Arrange
-        String input = "name Alice";
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set(input);
+        storage.set("name", "Alice");
 
         // Act
         int deletedCount = storage.del("name");
@@ -87,11 +82,10 @@ public class InMemoryStorageTest {
     @Test
     void shouldReturnZeroWhenDeletingNonExistingKey() {
         //Arrange
-        String input = "name Alice";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(input);
+        storage.set("name", "Alice");
         int value = storage.del("hello");
 
         //Assert
@@ -101,11 +95,10 @@ public class InMemoryStorageTest {
     @Test
     void shouldReturnTrueWhenKeyExists() {
         //Arrange
-        String input = "name Alice";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(input);
+        storage.set("name", "Alice");
         boolean value = storage.exists("name");
 
         //Assert
@@ -115,11 +108,10 @@ public class InMemoryStorageTest {
     @Test
     void shouldReturnFalseWhenKeyDoesNotExist() {
         //Arrange
-        String input = "name Alice";
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set(input);
+        storage.set("name", "Alice");
         boolean value = storage.exists("hello");
 
         //Assert
@@ -127,13 +119,12 @@ public class InMemoryStorageTest {
     }
 
     @Test
-    void shouldStoreEmptyStringWhenValueIsQuoted() {
+    void shouldStoreEmptyString() {
         // Arrange
-        String input = "name \"\"";
         InMemoryStorage storage = new InMemoryStorage();
 
         // Act
-        storage.set(input);
+        storage.set("name", "");
 
         // Assert
         assertEquals(Optional.of(""), storage.get("name"));
