@@ -3,8 +3,8 @@ package dev.learning.command;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
-import javax.swing.text.html.Option;
-import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -50,7 +50,11 @@ public class CommandDispatcher {
     private Optional<String> extractBulkOrSimpleString(RespValue request) {
         if (request instanceof RespValue.BulkString(byte[] value)
                 && value != null) {
-            return Optional.of(new String(value, StandardCharsets.UTF_8));
+            try {
+                return Optional.of(StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(value)).toString());
+            } catch (CharacterCodingException e) {
+                return Optional.empty();
+            }
         }
 
         if (request instanceof RespValue.SimpleString(String value)

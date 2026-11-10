@@ -195,6 +195,48 @@ class CommandDispatcherTest {
         assertEquals(Optional.of("Bob"), storage.get("name"));
     }
 
+    @Test
+    void shouldRejectMalformedUtf8KeysWithoutAccessingReplacementCharacterKey() {
+        storage.set("\uFFFD", "original");
+        RespValue.BulkString malformedKey = new RespValue.BulkString(new byte[]{(byte) 0xff});
+
+        RespValue setRequest = new RespValue.ArrayValue(List.of(
+                bulkString("SET"), malformedKey, bulkString("replacement")));
+        assertEquals(new RespValue.ErrorValue("ERR invalid key"), dispatcher.dispatch(setRequest));
+
+        for (String command : List.of("GET", "EXISTS", "DEL")) {
+            RespValue request = new RespValue.ArrayValue(List.of(bulkString(command), malformedKey));
+            assertEquals(new RespValue.ErrorValue("ERR invalid key"), dispatcher.dispatch(request), command);
+        }
+        assertEquals(Optional.of("original"), storage.get("\uFFFD"));
+    }
+
+    @Test
+    void shouldRejectMalformedUtf8ValueWithoutOverwritingExistingValue() {
+        storage.set("name", "original");
+        RespValue.BulkString malformedValue = new RespValue.BulkString(new byte[]{(byte) 0xc3, 0x28});
+        RespValue request = new RespValue.ArrayValue(List.of(bulkString("SET"), bulkString("name"), malformedValue));
+
+        assertEquals(new RespValue.ErrorValue("ERR invalid value"), dispatcher.dispatch(request));
+        assertEquals(Optional.of("original"), storage.get("name"));
+    }
+
+    @Test
+    void shouldPreserveValueAndTtlWhenSetOptionsAreInvalid() {
+        clock.advanceMillis(1_000);
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "original", "EX", "1"));
+
+        assertInstanceOf(RespValue.ErrorValue.class, dispatch("SET", "name", "changed", "NX", "XX"));
+        assertInstanceOf(RespValue.ErrorValue.class, dispatch("SET", "name", "changed", "EX", "invalid"));
+        assertInstanceOf(RespValue.ErrorValue.class, dispatch("SET", "name", "changed", "EX", "9223372036854775807"));
+        assertInstanceOf(RespValue.ErrorValue.class, dispatch("SET", "name", "changed", "EX", "9223372036854775"));
+
+        clock.advanceMillis(999);
+        assertEquals(Optional.of("original"), storage.get("name"));
+        clock.advanceMillis(1);
+        assertEquals(Optional.empty(), storage.get("name"));
+    }
+
     private RespValue dispatch(String... arguments) {
         List<RespValue> elements = Arrays.stream(arguments)
                 .<RespValue>map(CommandDispatcherTest::bulkString)

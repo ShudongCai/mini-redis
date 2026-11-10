@@ -6,11 +6,15 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 
 import static java.util.concurrent.TimeUnit.DAYS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -255,6 +259,112 @@ public class InMemoryStorageTest {
 
         assertFalse(written);
         assertEquals(Optional.empty(), storage.get("name"));
+    }
+
+    @Test
+    void shouldNotMissKeyWhenGetOverlapsOverwriteAtExpiration() throws Exception {
+        assertReadSurvivesOverwrite(storage -> storage.get("key").isPresent());
+    }
+
+    @Test
+    void shouldNotMissKeyWhenExistsOverlapsOverwriteAtExpiration() throws Exception {
+        assertReadSurvivesOverwrite(storage -> storage.exists("key"));
+    }
+
+    @Test
+    void shouldStartSetExpirationAfterWaitingForConcurrentDelete() throws Exception {
+        PausedClock clock = new PausedClock();
+        InMemoryStorage storage = new InMemoryStorage(clock);
+        assertTrue(storage.set("key", "old", SetOptions.builder().ttlSeconds(10L).build()));
+
+        FutureTask<Integer> delete = new FutureTask<>(() -> storage.del("key"));
+        clock.pauseOn(delete);
+        FutureTask<Boolean> write = new FutureTask<>(
+                () -> storage.set("key", "new", SetOptions.builder().nx().ttlSeconds(1L).build()));
+        try {
+            clock.awaitPause();
+            Thread writer = Thread.ofPlatform().daemon().start(write);
+            awaitBlockedOrDone(writer, write);
+            assertFalse(write.isDone(), "SET should wait for DEL on the same key");
+            clock.now.set(1_000);
+        } finally {
+            clock.resume.countDown();
+        }
+
+        assertEquals(1, delete.get(5, SECONDS));
+        assertTrue(write.get(5, SECONDS));
+        clock.now.set(1_999);
+        assertEquals(Optional.of("new"), storage.get("key"));
+        clock.now.set(2_000);
+        assertEquals(Optional.empty(), storage.get("key"));
+    }
+
+    private static void assertReadSurvivesOverwrite(Function<InMemoryStorage, Boolean> readKey)
+            throws Exception {
+        PausedClock clock = new PausedClock();
+        InMemoryStorage storage = new InMemoryStorage(clock);
+        assertTrue(storage.set("key", "old", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.now.set(999);
+
+        FutureTask<Boolean> read = new FutureTask<>(() -> readKey.apply(storage));
+        clock.pauseOn(read);
+        FutureTask<Boolean> overwrite = new FutureTask<>(() -> storage.set("key", "new"));
+        try {
+            clock.awaitPause();
+            Thread writer = Thread.ofPlatform().daemon().start(overwrite);
+            awaitBlockedOrDone(writer, overwrite);
+            if (overwrite.isDone()) {
+                // An unlocked read now holds a snapshot that has expired since replacement.
+                clock.now.set(1_000);
+            }
+        } finally {
+            clock.resume.countDown();
+        }
+
+        assertTrue(read.get(5, SECONDS), "The key was live throughout the read");
+        assertTrue(overwrite.get(5, SECONDS));
+        clock.now.set(1_000);
+        assertEquals(Optional.of("new"), storage.get("key"));
+    }
+
+    private static void awaitBlockedOrDone(Thread thread, FutureTask<?> task) throws InterruptedException {
+        long deadline = System.nanoTime() + SECONDS.toNanos(5);
+        while (thread.getState() != Thread.State.BLOCKED && !task.isDone()) {
+            if (System.nanoTime() - deadline >= 0) {
+                fail("Writer did not reach the map operation");
+            }
+            Thread.sleep(1);
+        }
+    }
+
+    private static final class PausedClock implements LongSupplier {
+        private final AtomicLong now = new AtomicLong();
+        private final CountDownLatch paused = new CountDownLatch(1);
+        private final CountDownLatch resume = new CountDownLatch(1);
+        private Thread pausedThread;
+
+        private void pauseOn(FutureTask<?> task) {
+            pausedThread = Thread.ofPlatform().daemon().unstarted(task);
+            pausedThread.start();
+        }
+
+        private void awaitPause() throws InterruptedException {
+            assertTrue(paused.await(5, SECONDS), "Worker did not reach the expiration check");
+        }
+
+        @Override
+        public long getAsLong() {
+            if (Thread.currentThread() == pausedThread) {
+                paused.countDown();
+                try {
+                    assertTrue(resume.await(10, SECONDS), "Test did not resume the clock");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(e);
+                }
+            }
+            return now.get();
+        }
     }
 
     @Test

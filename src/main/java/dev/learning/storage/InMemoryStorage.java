@@ -23,18 +23,8 @@ public class InMemoryStorage {
 
 
     public Optional<String> get(String key) {
-        StoredEntry result = data.get(key);
-
-        if (result == null) {
-            return Optional.empty();
-        }
-
-        if (isExpired(result)) {
-            data.remove(key, result);
-            return Optional.empty();
-        }
-
-        return Optional.of(result.value());
+        StoredEntry entry = getLiveEntry(key);
+        return entry == null ? Optional.empty() : Optional.of(entry.value());
     }
 
     public boolean set(String key, String value) {
@@ -51,24 +41,17 @@ public class InMemoryStorage {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
 
-        Long[] expireTime = {null};
-
-        if (subOptions.ttlSeconds() != null) {
-            if (subOptions.ttlSeconds() <= 0L) {
-                throw new IllegalArgumentException("TTL should be greater than zero");
-            }
-
-            expireTime[0] = Math.addExact(
-                    currentTimeMillis.getAsLong(),
-                    Math.multiplyExact(subOptions.ttlSeconds(), 1000L)
-            );
+        Long ttlSeconds = subOptions.ttlSeconds();
+        if (ttlSeconds != null && ttlSeconds <= 0) {
+            throw new IllegalArgumentException("TTL should be greater than zero");
         }
-
-        final Long newExpireTime = expireTime[0];
+        Long ttlMillis = ttlSeconds == null ? null : Math.multiplyExact(ttlSeconds, 1000L);
         boolean[] written = {false};
 
         data.compute(key, (k, oldEntry) -> {
-            boolean exists = oldEntry != null && !isExpired(oldEntry);
+            long now = currentTimeMillis.getAsLong();
+            Long newExpireTime = ttlMillis == null ? null : Math.addExact(now, ttlMillis);
+            boolean exists = oldEntry != null && !isExpired(oldEntry, now);
 
             if (subOptions.nx() && exists) {
                 return oldEntry;
@@ -93,7 +76,7 @@ public class InMemoryStorage {
         boolean[] deleted = {false};
 
         data.computeIfPresent(key, (k, entry) -> {
-            deleted[0] = !isExpired(entry);
+            deleted[0] = !isExpired(entry, currentTimeMillis.getAsLong());
 
             return null;
         });
@@ -105,26 +88,15 @@ public class InMemoryStorage {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
-
-        StoredEntry result = data.get(key);
-
-        if (result == null) {
-            return false;
-        }
-
-        if (isExpired(result)) {
-            data.remove(key, result);
-            return false;
-        }
-
-        return true;
+        return getLiveEntry(key) != null;
     }
 
-    private boolean isExpired(StoredEntry result) {
-        if (result.ex() != null) {
-            return currentTimeMillis.getAsLong() >= result.ex();
-        }
+    private StoredEntry getLiveEntry(String key) {
+        return data.computeIfPresent(key, (k, entry) ->
+                isExpired(entry, currentTimeMillis.getAsLong()) ? null : entry);
+    }
 
-        return false;
+    private static boolean isExpired(StoredEntry entry, long now) {
+        return entry.ex() != null && now >= entry.ex();
     }
 }
