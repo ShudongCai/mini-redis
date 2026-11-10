@@ -4,11 +4,19 @@ import dev.learning.storage.model.StoredEntry;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
     private final ConcurrentHashMap<String, StoredEntry> data;
 
+    private final LongSupplier currentTimeMillis;
+
     public InMemoryStorage() {
+        this(System::currentTimeMillis);
+    }
+
+    InMemoryStorage(LongSupplier currentTimeMillis) {
+        this.currentTimeMillis = currentTimeMillis;
         this.data = new ConcurrentHashMap<>();
     }
 
@@ -17,6 +25,11 @@ public class InMemoryStorage {
         StoredEntry result = data.get(key);
 
         if (result == null) {
+            return Optional.empty();
+        }
+
+        if (isExpired(result)) {
+            data.remove(key, result);
             return Optional.empty();
         }
 
@@ -41,7 +54,7 @@ public class InMemoryStorage {
         }
 
         Long expireTime = Math.addExact(
-                System.currentTimeMillis(),
+                currentTimeMillis.getAsLong(),
                 Math.multiplyExact(ttlSeconds, 1000L)
         );
 
@@ -53,18 +66,41 @@ public class InMemoryStorage {
             throw new IllegalArgumentException("Key should not be null");
         }
 
-        if (data.remove(key) != null) {
-            return 1;
-        }
+        boolean[] deleted = {false};
 
-        return 0;
+        data.computeIfPresent(key, (k, entry) -> {
+            deleted[0] = !isExpired(entry);
+
+            return null;
+        });
+
+        return deleted[0] ? 1 : 0;
     }
 
     public boolean exists(String key) {
         if (key == null) {
-            throw new IllegalArgumentException("Key should not be blank");
+            throw new IllegalArgumentException("Key should not be null");
         }
 
-        return data.containsKey(key);
+        StoredEntry result = data.get(key);
+
+        if (result == null) {
+            return false;
+        }
+
+        if (isExpired(result)) {
+            data.remove(key, result);
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean isExpired(StoredEntry result) {
+        if (result.ex() != null) {
+            return currentTimeMillis.getAsLong() >= result.ex();
+        }
+
+        return false;
     }
 }

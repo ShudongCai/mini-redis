@@ -9,7 +9,9 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
+import static java.util.concurrent.TimeUnit.DAYS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -66,6 +68,62 @@ public class InMemoryStorageTest {
     }
 
     @Test
+    void shouldReturnValueWhenKeyHasNotExpired() {
+        AtomicLong now = new AtomicLong();
+        InMemoryStorage storage = new InMemoryStorage(now::get);
+        storage.set("name", "Alice", 1);
+
+        now.addAndGet(999);
+
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenKeyHasExpired() {
+        AtomicLong now = new AtomicLong();
+        InMemoryStorage storage = new InMemoryStorage(now::get);
+        storage.set("name", "Alice", 1);
+
+        now.addAndGet(1_000);
+
+        assertEquals(Optional.empty(), storage.get("name"));
+    }
+
+    @Test
+    void shouldReturnValueWhenKeyHasNoExpiration() {
+        AtomicLong now = new AtomicLong();
+        InMemoryStorage storage = new InMemoryStorage(now::get);
+        storage.set("name", "Alice");
+
+        now.addAndGet(DAYS.toMillis(1));
+
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldClearExpirationWhenExistingKeyIsOverwritten() {
+        AtomicLong now = new AtomicLong();
+        InMemoryStorage storage = new InMemoryStorage(now::get);
+        storage.set("name", "Alice", 1);
+        now.addAndGet(500);
+
+        storage.set("name", "Ben");
+        now.addAndGet(1_000);
+
+        assertEquals(Optional.of("Ben"), storage.get("name"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenExpiredKeyIsDeleted() {
+        AtomicLong now = new AtomicLong();
+        InMemoryStorage storage = new InMemoryStorage(now::get);
+        storage.set("name", "Alice", 1);
+        now.addAndGet(1_000);
+
+        assertEquals(0, storage.del("name"));
+    }
+
+    @Test
     void shouldReturnOneWhenExistingKeyIsDeleted() {
         // Arrange
         InMemoryStorage storage = new InMemoryStorage();
@@ -80,7 +138,7 @@ public class InMemoryStorageTest {
     }
 
     @Test
-    void shouldReturnZeroWhenDeletingNonExistingKey() {
+    void shouldReturnZeroWhenKeyDoesNotExist() {
         //Arrange
         InMemoryStorage storage = new InMemoryStorage();
 
