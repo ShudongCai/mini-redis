@@ -1,5 +1,6 @@
 package dev.learning.storage;
 
+import dev.learning.command.SetOptions;
 import dev.learning.storage.model.StoredEntry;
 
 import java.util.*;
@@ -36,29 +37,52 @@ public class InMemoryStorage {
         return Optional.of(result.value());
     }
 
-    public void set(String key, String value) {
+    public boolean set(String key, String value) {
         if (key == null || value == null) {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
 
         data.put(key, new StoredEntry(value, null));
+        return true;
     }
 
-    public void set(String key, String value, long ttlSeconds) {
+    public boolean set(String key, String value, SetOptions subOptions) {
         if (key == null || value == null) {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
 
-        if (ttlSeconds <= 0L) {
-            throw new IllegalArgumentException("TTL should be greater than zero");
+        Long[] expireTime = {null};
+
+        if (subOptions.ttlSeconds() != null) {
+            if (subOptions.ttlSeconds() <= 0L) {
+                throw new IllegalArgumentException("TTL should be greater than zero");
+            }
+
+            expireTime[0] = Math.addExact(
+                    currentTimeMillis.getAsLong(),
+                    Math.multiplyExact(subOptions.ttlSeconds(), 1000L)
+            );
         }
 
-        Long expireTime = Math.addExact(
-                currentTimeMillis.getAsLong(),
-                Math.multiplyExact(ttlSeconds, 1000L)
-        );
+        final Long newExpireTime = expireTime[0];
+        boolean[] written = {false};
 
-        data.put(key, new StoredEntry(value, expireTime));
+        data.compute(key, (k, oldEntry) -> {
+            boolean exists = oldEntry != null && !isExpired(oldEntry);
+
+            if (subOptions.nx() && exists) {
+                return oldEntry;
+            }
+
+            if (subOptions.xx() && !exists) {
+                return null;
+            }
+
+            written[0] = true;
+            return new StoredEntry(value, newExpireTime);
+        });
+
+        return written[0];
     }
 
     public int del(String key) {

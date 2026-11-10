@@ -1,5 +1,6 @@
 package dev.learning.storage;
 
+import dev.learning.command.SetOptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -71,7 +72,7 @@ public class InMemoryStorageTest {
     void shouldReturnValueWhenKeyHasNotExpired() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        storage.set("name", "Alice", 1);
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
 
         now.addAndGet(999);
 
@@ -82,7 +83,7 @@ public class InMemoryStorageTest {
     void shouldReturnEmptyWhenKeyHasExpired() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        storage.set("name", "Alice", 1);
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
 
         now.addAndGet(1_000);
 
@@ -104,7 +105,7 @@ public class InMemoryStorageTest {
     void shouldClearExpirationWhenExistingKeyIsOverwritten() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        storage.set("name", "Alice", 1);
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
         now.addAndGet(500);
 
         storage.set("name", "Ben");
@@ -117,7 +118,7 @@ public class InMemoryStorageTest {
     void shouldReturnZeroWhenExpiredKeyIsDeleted() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        storage.set("name", "Alice", 1);
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
         now.addAndGet(1_000);
 
         assertEquals(0, storage.del("name"));
@@ -186,6 +187,74 @@ public class InMemoryStorageTest {
 
         // Assert
         assertEquals(Optional.of(""), storage.get("name"));
+    }
+
+    @Test
+    void shouldSetValueWhenKeyDoesNotExistWithNx() {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        boolean written = storage.set("name", "Alice", SetOptions.builder().nx().build());
+
+        assertTrue(written);
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldNotOverwriteValueWhenKeyExistsWithNx() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.set("name", "Alice");
+
+        boolean written = storage.set("name", "Bob", SetOptions.builder().nx().build());
+
+        assertFalse(written);
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldOverwriteValueWhenKeyExistsWithXx() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.set("name", "Alice");
+
+        boolean written = storage.set("name", "Bob", SetOptions.builder().xx().build());
+
+        assertTrue(written);
+        assertEquals(Optional.of("Bob"), storage.get("name"));
+    }
+
+    @Test
+    void shouldNotSetValueWhenKeyDoesNotExistWithXx() {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        boolean written = storage.set("name", "Alice", SetOptions.builder().xx().build());
+
+        assertFalse(written);
+        assertEquals(Optional.empty(), storage.get("name"));
+    }
+
+    @Test
+    void shouldSetValueWhenKeyHasExpiredWithNx() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(1_000);
+
+        boolean written = storage.set("name", "Bob", SetOptions.builder().nx().build());
+
+        assertTrue(written);
+        assertEquals(Optional.of("Bob"), storage.get("name"));
+    }
+
+    @Test
+    void shouldNotSetValueWhenKeyHasExpiredWithXx() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(1_000);
+
+        boolean written = storage.set("name", "Bob", SetOptions.builder().xx().build());
+
+        assertFalse(written);
+        assertEquals(Optional.empty(), storage.get("name"));
     }
 
     @Test

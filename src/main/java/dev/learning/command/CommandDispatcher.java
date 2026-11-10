@@ -3,11 +3,10 @@ package dev.learning.command;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
+import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import java.util.*;
 
 public class CommandDispatcher {
     private final InMemoryStorage storage;
@@ -152,7 +151,7 @@ public class CommandDispatcher {
     }
 
     private RespValue executeSetCommand(List<RespValue> elements) {
-        if (elements.size() != 3) {
+        if (elements.size() < 3) {
             return new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'set' command"
             );
@@ -169,9 +168,66 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR invalid value");
         }
 
-        storage.set(key.get(), value.get());
+        if (elements.size() > 3) {
+            try {
+                Optional<SetOptions> subOptions = extractSubcommand(elements);
+                if (subOptions.isEmpty()) {
+                    return new RespValue.ErrorValue("Suboptions are invalid");
+                }
 
-        return new RespValue.SimpleString("OK");
+                if (subOptions.get().nx() && subOptions.get().xx()) {
+                    return new RespValue.ErrorValue("NX and XX cannot be set together");
+                }
+
+                boolean settable = storage.set(key.get(), value.get(), subOptions.get());
+                return settable ? new RespValue.SimpleString("OK")
+                        : new RespValue.BulkString(null);
+            } catch (IllegalArgumentException | ArithmeticException e) {
+                return new RespValue.ErrorValue("ERR invalid SET options");
+            }
+        }
+
+        boolean settable = storage.set(key.get(), value.get());
+
+        return settable ? new RespValue.SimpleString("OK")
+                : new RespValue.BulkString(null);
+    }
+
+    private Optional<SetOptions> extractSubcommand(List<RespValue> elements) {
+        SetOptions.Builder builder = new SetOptions.Builder();
+
+
+        for (int i = 3; i < elements.size(); i++) {
+            Optional<String> command = extractBulkOrSimpleString(elements.get(i));
+
+            if (command.isEmpty()) {
+                return Optional.empty();
+            }
+
+            switch (command.get().trim().toUpperCase(Locale.ROOT)) {
+                case "EX" -> {
+                    if (i + 1 >= elements.size()) {
+                        return Optional.empty();
+                    }
+
+                    Optional<String> secondsText =
+                            extractBulkOrSimpleString(elements.get(++i));
+
+                    if (secondsText.isEmpty()) {
+                        return Optional.empty();
+                    }
+
+                    long seconds = Long.parseLong(secondsText.get());
+                    builder.ttlSeconds(seconds);
+                }
+
+                case "NX" -> builder.nx();
+                case "XX" -> builder.xx();
+                default -> throw new IllegalArgumentException("Invalid SET option");
+            }
+        }
+
+        return Optional.of(builder.build());
     }
 
     private Optional<RespValue> validateArrayRequest(List<RespValue> elements) {

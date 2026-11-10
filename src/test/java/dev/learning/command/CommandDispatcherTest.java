@@ -2,6 +2,7 @@ package dev.learning.command;
 
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
+import dev.learning.storage.StorageTestClock;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -16,7 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class CommandDispatcherTest {
-    private final InMemoryStorage storage = new InMemoryStorage();
+    private final StorageTestClock clock = new StorageTestClock();
+    private final InMemoryStorage storage = clock.newStorage();
     private final CommandDispatcher dispatcher = new CommandDispatcher(storage);
 
     @Test
@@ -160,6 +162,37 @@ class CommandDispatcherTest {
 
         assertEquals(new RespValue.SimpleString("OK"), valid);
         assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldPreserveExistingValueWhenNxConditionFails() {
+        storage.set("name", "Alice");
+
+        RespValue result = dispatch("SET", "name", "Bob", "NX");
+
+        assertEquals(new RespValue.BulkString(null), result);
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldOverwriteExistingValueWhenXxConditionSucceeds() {
+        storage.set("name", "Alice");
+
+        RespValue result = dispatch("SET", "name", "Bob", "XX");
+
+        assertEquals(new RespValue.SimpleString("OK"), result);
+        assertEquals(Optional.of("Bob"), storage.get("name"));
+    }
+
+    @Test
+    void shouldTreatExpiredKeyAsAbsentWhenNxIsUsed() {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "1"));
+        clock.advanceMillis(1_000);
+
+        RespValue result = dispatch("SET", "name", "Bob", "NX");
+
+        assertEquals(new RespValue.SimpleString("OK"), result);
+        assertEquals(Optional.of("Bob"), storage.get("name"));
     }
 
     private RespValue dispatch(String... arguments) {
