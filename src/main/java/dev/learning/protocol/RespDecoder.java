@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,10 +15,12 @@ public class RespDecoder {
     private static final int MAX_READ_VALUE = 16 * 1024;
     private static final int MAX_ARRAY_ELEMENTS = 1024;
     private static final int MAX_NESTING_DEPTH = 32;
+    private static final int MAX_FRAME_BYTES = 256 * 1024;
 
-    public RespValue readAndExecuteRespMessage(InputStream stream)
+    public RespValue readAndExecuteRespMessage(InputStream input)
             throws IOException {
 
+        FrameInput stream = new FrameInput(input);
         int prefix = stream.read();
 
         if (prefix == -1) {
@@ -30,7 +34,7 @@ public class RespDecoder {
 
     private RespValue executeType(
             RespType type,
-            InputStream stream,
+            FrameInput stream,
             int depth
     ) throws IOException {
 
@@ -43,27 +47,35 @@ public class RespDecoder {
         };
     }
 
-    private RespValue executeSimpleString(InputStream stream)
+    private RespValue executeSimpleString(FrameInput stream)
             throws IOException {
 
         byte[] value = findCRLF(stream);
 
         return new RespValue.SimpleString(
-                new String(value, StandardCharsets.UTF_8)
+                decodeText(value)
         );
     }
 
-    private RespValue executeError(InputStream stream)
+    private RespValue executeError(FrameInput stream)
             throws IOException {
 
         byte[] value = findCRLF(stream);
 
         return new RespValue.ErrorValue(
-                new String(value, StandardCharsets.UTF_8)
+                decodeText(value)
         );
     }
 
-    private RespValue executeInteger(InputStream stream)
+    private String decodeText(byte[] value) throws IOException {
+        try {
+            return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(value)).toString();
+        } catch (CharacterCodingException e) {
+            throw new IOException("Invalid UTF-8 in RESP text", e);
+        }
+    }
+
+    private RespValue executeInteger(FrameInput stream)
             throws IOException {
 
         byte[] value = findCRLF(stream);
@@ -80,7 +92,7 @@ public class RespDecoder {
         }
     }
 
-    private RespValue executeBulkString(InputStream stream)
+    private RespValue executeBulkString(FrameInput stream)
             throws IOException {
 
         int length = findCounts(stream, MAX_READ_VALUE);
@@ -89,7 +101,7 @@ public class RespDecoder {
             return new RespValue.BulkString(null);
         }
 
-        byte[] body = stream.readNBytes(length);
+        byte[] body = stream.readBulkPayload(length);
 
         if (body.length != length) {
             throw new EOFException("Incomplete Bulk String");
@@ -100,7 +112,7 @@ public class RespDecoder {
         return new RespValue.BulkString(body);
     }
 
-    private RespValue executeArray(InputStream stream, int depth)
+    private RespValue executeArray(FrameInput stream, int depth)
             throws IOException {
 
         if (depth >= MAX_NESTING_DEPTH) {
@@ -131,7 +143,7 @@ public class RespDecoder {
         return new RespValue.ArrayValue(body);
     }
 
-    private int findCounts(InputStream stream, int maximum)
+    private int findCounts(FrameInput stream, int maximum)
             throws IOException {
 
         byte[] counts = findCRLF(stream);
@@ -168,7 +180,7 @@ public class RespDecoder {
         );
     }
 
-    private byte[] findCRLF(InputStream stream) throws IOException {
+    private byte[] findCRLF(FrameInput stream) throws IOException {
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -207,17 +219,53 @@ public class RespDecoder {
         }
     }
 
-    private void expectCRLF(InputStream stream) throws IOException {
-
+    private void expectCRLF(FrameInput stream) throws IOException {
         int first = stream.read();
-        int second = stream.read();
-
-        if (first == -1 || second == -1) {
+        if (first == -1) {
             throw new EOFException("Incomplete CRLF");
         }
-
-        if (first != '\r' || second != '\n') {
+        if (first != '\r') {
             throw new IOException("Expected CRLF");
+        }
+
+        int second = stream.read();
+        if (second == -1) {
+            throw new EOFException("Incomplete CRLF");
+        }
+        if (second != '\n') {
+            throw new IOException("Expected CRLF");
+        }
+    }
+
+    private static final class FrameInput {
+        private final InputStream input;
+        private int remaining = MAX_FRAME_BYTES;
+
+        private FrameInput(InputStream input) {
+            this.input = input;
+        }
+
+        private int read() throws IOException {
+            requireRemaining(1);
+            int value = input.read();
+            if (value != -1) {
+                remaining--;
+            }
+            return value;
+        }
+
+        private byte[] readBulkPayload(int length) throws IOException {
+            // Reject oversized payloads before reading or allocating, including their trailer.
+            requireRemaining(length + 2);
+            byte[] payload = input.readNBytes(length);
+            remaining -= payload.length;
+            return payload;
+        }
+
+        private void requireRemaining(int bytes) throws IOException {
+            if (bytes > remaining) {
+                throw new IOException("RESP frame too large");
+            }
         }
     }
 }

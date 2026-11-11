@@ -394,6 +394,89 @@ public class RespDecoderTest {
         }
     }
 
+    @Test
+    void shouldRejectMalformedUtf8InSimpleString() {
+        ByteArrayInputStream input = new ByteArrayInputStream(new byte[]{'+', (byte) 0xff, '\r', '\n'});
+
+        IOException error = assertThrows(IOException.class, () -> new RespDecoder().readAndExecuteRespMessage(input));
+
+        assertEquals("Invalid UTF-8 in RESP text", error.getMessage());
+    }
+
+    @Test
+    void shouldPreserveNonUtf8BulkPayload() throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(new byte[]{'$', '1', '\r', '\n', (byte) 0xff, '\r', '\n'});
+
+        RespValue.BulkString value = assertInstanceOf(
+                RespValue.BulkString.class, new RespDecoder().readAndExecuteRespMessage(input));
+
+        assertArrayEquals(new byte[]{(byte) 0xff}, value.value());
+    }
+
+    @Test
+    void shouldRejectFirstInvalidBulkTrailerByteWithoutReadingAnotherByte() {
+        ByteArrayInputStream input = new ByteArrayInputStream("$1\r\nxX!".getBytes(StandardCharsets.UTF_8));
+
+        IOException error = assertThrows(IOException.class, () -> new RespDecoder().readAndExecuteRespMessage(input));
+
+        assertEquals("Expected CRLF", error.getMessage());
+        assertEquals('!', input.read());
+    }
+
+    @Test
+    void shouldAcceptFrameAtSizeLimitAndResetBudgetForNextFrame() throws IOException {
+        String prefix = framePrefixBeforeFinalBulk();
+        int length = finalBulkLengthAtFrameLimit(prefix);
+        String frame = prefix + "$" + length + "\r\n" + "x".repeat(length) + "\r\n";
+        ByteArrayInputStream input = new ByteArrayInputStream((frame + "+OK\r\n").getBytes(StandardCharsets.UTF_8));
+        RespDecoder decoder = new RespDecoder();
+
+        RespValue.ArrayValue outer = assertInstanceOf(RespValue.ArrayValue.class,
+                decoder.readAndExecuteRespMessage(input));
+        RespValue.ArrayValue inner = assertInstanceOf(RespValue.ArrayValue.class, outer.elements().getFirst());
+        RespValue.BulkString last = assertInstanceOf(RespValue.BulkString.class, inner.elements().getLast());
+
+        assertEquals(16, inner.elements().size());
+        assertEquals(length, last.value().length);
+        assertEquals(new RespValue.SimpleString("OK"), decoder.readAndExecuteRespMessage(input));
+        assertNull(decoder.readAndExecuteRespMessage(input));
+    }
+
+    @Test
+    void shouldRejectOversizedNestedFrameBeforeReadingBulkPayload() {
+        String prefix = framePrefixBeforeFinalBulk();
+        int length = finalBulkLengthAtFrameLimit(prefix) + 1;
+        String unreadPayload = "unread";
+        ByteArrayInputStream input = new ByteArrayInputStream(
+                (prefix + "$" + length + "\r\n" + unreadPayload).getBytes(StandardCharsets.UTF_8));
+
+        IOException error = assertThrows(IOException.class, () -> new RespDecoder().readAndExecuteRespMessage(input));
+
+        assertEquals("RESP frame too large", error.getMessage());
+        assertEquals(unreadPayload.length(), input.available());
+    }
+
+    @Test
+    void shouldCountTextLinesTowardFrameSizeLimit() {
+        String line = "+" + "x".repeat(16 * 1024) + "\r\n";
+        ByteArrayInputStream input = new ByteArrayInputStream(
+                ("*16\r\n" + line.repeat(16)).getBytes(StandardCharsets.UTF_8));
+
+        IOException error = assertThrows(IOException.class, () -> new RespDecoder().readAndExecuteRespMessage(input));
+
+        assertEquals("RESP frame too large", error.getMessage());
+    }
+
+    private static String framePrefixBeforeFinalBulk() {
+        String bulk = "$16384\r\n" + "x".repeat(16 * 1024) + "\r\n";
+        return "*1\r\n*16\r\n" + bulk.repeat(15);
+    }
+
+    private static int finalBulkLengthAtFrameLimit(String prefix) {
+        // The final bulk has a five-digit length. Include its header and trailer.
+        return 256 * 1024 - prefix.length() - "$00000\r\n\r\n".length();
+    }
+
     private static class FragmentedInputStream extends InputStream {
         private final ByteArrayInputStream delegate;
         private final int fragmentSize;

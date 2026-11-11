@@ -1,50 +1,70 @@
 package dev.learning.storage;
 
+import dev.learning.command.SetOptions;
 import dev.learning.storage.model.StoredEntry;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
     private final ConcurrentHashMap<String, StoredEntry> data;
 
+    private final LongSupplier currentTimeMillis;
+
     public InMemoryStorage() {
+        this(System::currentTimeMillis);
+    }
+
+    InMemoryStorage(LongSupplier currentTimeMillis) {
+        this.currentTimeMillis = currentTimeMillis;
         this.data = new ConcurrentHashMap<>();
     }
 
-
     public Optional<String> get(String key) {
-        StoredEntry result = data.get(key);
-
-        if (result == null) {
-            return Optional.empty();
-        }
-
-        return Optional.of(result.value());
+        StoredEntry entry = getLiveEntry(key);
+        return entry == null ? Optional.empty() : Optional.of(entry.value());
     }
 
-    public void set(String input) {
-        if (input == null || input.isBlank()) {
-            throw new IllegalArgumentException("Input is invalid");
-        }
-
-        Map<String, String> values = spiltValue(input.trim());
-        String[] temp = input.split(" ");
-        Long expireTime = null;
-
-        if (values.containsKey("EX")) {
-            expireTime = Long.parseLong(values.get("EX"));
-        }
-
-        data.put(temp[0], new StoredEntry(values.get(temp[0]), expireTime));
-    }
-
-    public void set(String key, String value) {
+    public boolean set(String key, String value) {
         if (key == null || value == null) {
-            throw new IllegalArgumentException("Key should not be null");
+            throw new IllegalArgumentException("Key or Value should not be null");
         }
 
         data.put(key, new StoredEntry(value, null));
+        return true;
+    }
+
+    public boolean set(String key, String value, SetOptions subOptions) {
+        if (key == null || value == null) {
+            throw new IllegalArgumentException("Key or Value should not be null");
+        }
+
+        Long ttlSeconds = subOptions.ttlSeconds();
+        if (ttlSeconds != null && ttlSeconds <= 0) {
+            throw new IllegalArgumentException("TTL should be greater than zero");
+        }
+        Long ttlMillis = ttlSeconds == null ? null : Math.multiplyExact(ttlSeconds, 1000L);
+        boolean[] written = {false};
+
+        data.compute(key, (k, oldEntry) -> {
+            long now = currentTimeMillis.getAsLong();
+            Long newExpireTime = ttlMillis == null ? null : Math.addExact(now, ttlMillis);
+            boolean exists = oldEntry != null && !isExpired(oldEntry, now);
+
+            if (subOptions.nx() && exists) {
+                return oldEntry;
+            }
+
+            if (subOptions.xx() && !exists) {
+                return null;
+            }
+
+            written[0] = true;
+            return new StoredEntry(value, newExpireTime);
+        });
+
+        return written[0];
     }
 
     public int del(String key) {
@@ -52,63 +72,132 @@ public class InMemoryStorage {
             throw new IllegalArgumentException("Key should not be null");
         }
 
-        if (data.remove(key) != null) {
-            return 1;
-        }
+        boolean[] deleted = {false};
 
-        return 0;
+        data.computeIfPresent(key, (k, entry) -> {
+            deleted[0] = !isExpired(entry, currentTimeMillis.getAsLong());
+
+            return null;
+        });
+
+        return deleted[0] ? 1 : 0;
     }
 
     public boolean exists(String key) {
         if (key == null) {
-            throw new IllegalArgumentException("Key should not be blank");
+            throw new IllegalArgumentException("Key should not be null");
         }
-
-        return data.containsKey(key);
+        return getLiveEntry(key) != null;
     }
 
-    private Map<String, String> spiltValue(String input) {
-        Map<String, String> result = new HashMap<>();
-        int position = 0;
-        String temp = "";
-        boolean close = true;
+    private StoredEntry getLiveEntry(String key) {
+        return data.computeIfPresent(key, (k, entry) ->
+                isExpired(entry, currentTimeMillis.getAsLong()) ? null : entry);
+    }
 
-        for (int i = 0; i < input.length(); ++i) {
-            if (input.charAt(i) == '"') {
-                close = !close;
+    private static boolean isExpired(StoredEntry entry, long now) {
+        return entry.ex() != null && now >= entry.ex();
+    }
 
-                if (temp.isEmpty()) {
-                    throw new IllegalArgumentException("Invalid key - value mapping");
-                }
-
-                if (!close) {
-                    position++;
-                } else {
-                    result.put(temp, input.substring(position, i));
-                    position = i + 2;
-                    temp = "";
-                }
-
-                continue;
-            }
-
-            if (input.charAt(i) != ' ' || !close) {
-                continue;
-            }
-
-            if (temp.isEmpty()) {
-                temp = input.substring(position, i);
-            } else {
-                result.put(temp, input.substring(position, i));
-                temp = "";
-            }
-            position = i + 1;
+    public long ttl(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
         }
 
-        if (!temp.isEmpty()) {
-            result.put(temp, input.substring(position));
+        long[] result = {-2L};
+
+        data.computeIfPresent(key, (k, value) -> {
+            if (value.ex() == null) {
+                result[0] = -1;
+                return value;
+            }
+
+            long now = currentTimeMillis.getAsLong();
+
+            if (value.ex() <= now) {
+                return null;
+            }
+
+            long remainingMillis = value.ex() - now;
+            result[0] = remainingMillis / 1000
+                    + (remainingMillis % 1000 >= 500 ? 1 : 0);
+            return value;
+        });
+
+        return result[0];
+    }
+
+    public int expire(String key, long seconds) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key or value is null");
         }
 
-        return result;
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, entry) -> {
+            long now = currentTimeMillis.getAsLong();
+
+            if (entry.ex() != null && entry.ex() <= now) {
+                return null;
+            }
+
+            if (seconds <= 0) {
+                result[0] = 1;
+                return null;
+            }
+
+            long ex = Math.addExact(
+                    now,
+                    Math.multiplyExact(seconds, 1000L)
+            );
+
+            result[0] = 1;
+            return new StoredEntry(entry.value(), ex);
+        });
+
+        return result[0];
+    }
+
+    public int persist(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("The key is null");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, value) -> {
+           if (value.ex() == null) {
+                return value;
+           }
+
+           if (value.ex() <= currentTimeMillis.getAsLong()) {
+               return null;
+           }
+
+           result[0] = 1;
+           return new StoredEntry(value.value(), null);
+        });
+
+        return result[0];
+    }
+
+    int cleanupExpiredEntries() {
+        int[] cleanupEntries = {0};
+        for (String key : data.keySet()) {
+            data.computeIfPresent(key, (k, entry) -> {
+               if (entry.ex() != null && entry.ex() <= currentTimeMillis.getAsLong()) {
+                   cleanupEntries[0] = cleanupEntries[0] + 1;
+                   return null;
+               }
+
+                return entry;
+            });
+        }
+
+        return cleanupEntries[0];
+    }
+
+    public Runnable expirationCleanupTask() {
+        return this::cleanupExpiredEntries;
     }
 }

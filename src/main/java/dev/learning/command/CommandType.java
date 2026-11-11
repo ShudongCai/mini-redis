@@ -5,7 +5,10 @@ public enum CommandType {
     SET("set"),
     GET("get"),
     DEL("del"),
-    EXISTS("exists");
+    EXISTS("exists"),
+    TTL("ttl"),
+    EXPIRE("expire"),
+    PERSIST("persist");
 
     private final String value;
 
