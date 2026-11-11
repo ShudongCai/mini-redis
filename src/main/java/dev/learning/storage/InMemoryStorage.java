@@ -126,4 +126,35 @@ public class InMemoryStorage {
 
         return result[0];
     }
+
+    public int expire(String key, long seconds) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key or value is null");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, entry) -> {
+            long now = currentTimeMillis.getAsLong();
+
+            if (entry.ex() != null && entry.ex() <= now) {
+                return null;
+            }
+
+            if (seconds <= 0) {
+                result[0] = 1;
+                return null;
+            }
+
+            long ex = Math.addExact(
+                    now,
+                    Math.multiplyExact(seconds, 1000L)
+            );
+
+            result[0] = 1;
+            return new StoredEntry(entry.value(), ex);
+        });
+
+        return result[0];
+    }
 }

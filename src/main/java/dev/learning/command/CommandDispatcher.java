@@ -6,7 +6,9 @@ import dev.learning.storage.InMemoryStorage;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 public class CommandDispatcher {
     private final InMemoryStorage storage;
@@ -87,12 +89,36 @@ public class CommandDispatcher {
             case CommandType.EXISTS -> executeExistCommand(elements);
             case CommandType.GET -> executeGetCommand(elements);
             case CommandType.TTL -> executeTTLCommand(elements);
+            case CommandType.EXPIRE -> executeExpireCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeExpireCommand(List<RespValue> elements) {
+        if (elements.size() != 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'expire' command");
+        }
+
+        Optional<String> value = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> sTTL = extractBulkOrSimpleString(elements.get(2));
+
+        if (value.isEmpty() || sTTL.isEmpty()) {
+            return new RespValue.ErrorValue("The Expire command is invalid");
+        }
+
+        try {
+            long seconds = Long.parseLong(sTTL.get());
+            int result = storage.expire(value.get(), seconds);
+            return new RespValue.IntegerValue(result);
+        } catch (NumberFormatException e) {
+            return new RespValue.ErrorValue(
+                    "ERR invalid expire time"
+            );
+        }
     }
 
     private RespValue executeTTLCommand(List<RespValue> elements) {
