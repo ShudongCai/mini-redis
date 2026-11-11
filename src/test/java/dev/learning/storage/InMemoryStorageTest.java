@@ -4,6 +4,7 @@ import dev.learning.command.SetOptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -156,6 +157,78 @@ public class InMemoryStorageTest {
         clock.advanceMillis(10_000 - remainingMillis);
 
         assertEquals(expectedSeconds, storage.ttl("name"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenExpireKeyIsMissing() {
+        InMemoryStorage storage = new StorageTestClock().newStorage();
+
+        assertEquals(0, storage.expire("missing", 10));
+        assertEquals(-2L, storage.ttl("missing"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} on an expired key returns zero")
+    @ValueSource(longs = {10, 0})
+    void shouldReturnZeroWhenExpireKeyIsAlreadyExpired(long seconds) {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(1_000);
+
+        assertEquals(0, storage.expire("name", seconds));
+        assertEquals(-2L, storage.ttl("name"));
+    }
+
+    @Test
+    void shouldSetExpirationOnPersistentKeyWithoutChangingItsValue() {
+        InMemoryStorage storage = new StorageTestClock().newStorage();
+        assertTrue(storage.set("name", "Alice"));
+
+        assertEquals(1, storage.expire("name", 10));
+        assertEquals(10L, storage.ttl("name"));
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldReplaceExistingExpirationRelativeToCurrentTime() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        clock.advanceMillis(4_000);
+
+        assertEquals(1, storage.expire("name", 20));
+        assertEquals(20L, storage.ttl("name"));
+        clock.advanceMillis(6_000);
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+        clock.advanceMillis(14_000);
+        assertEquals(-2L, storage.ttl("name"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} deletes a live key")
+    @ValueSource(longs = {0, -5})
+    void shouldDeleteLiveKeyWhenExpireTimeIsNonPositive(long seconds) {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+
+        assertEquals(1, storage.expire("name", seconds));
+        assertEquals(Optional.empty(), storage.get("name"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} preserves the entry on overflow")
+    @ValueSource(longs = {Long.MAX_VALUE, Long.MAX_VALUE / 1_000})
+    void shouldPreserveValueAndDeadlineWhenExpireOverflows(long seconds) {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        clock.advanceMillis(1_000);
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+
+        assertThrows(ArithmeticException.class, () -> storage.expire("name", seconds));
+        assertEquals(10L, storage.ttl("name"));
+        clock.advanceMillis(9_999);
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+        clock.advanceMillis(1);
+        assertEquals(-2L, storage.ttl("name"));
     }
 
     @Test

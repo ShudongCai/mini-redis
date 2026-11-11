@@ -114,7 +114,7 @@ public class CommandDispatcher {
             long seconds = Long.parseLong(sTTL.get());
             int result = storage.expire(value.get(), seconds);
             return new RespValue.IntegerValue(result);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException | ArithmeticException e) {
             return new RespValue.ErrorValue(
                     "ERR invalid expire time"
             );

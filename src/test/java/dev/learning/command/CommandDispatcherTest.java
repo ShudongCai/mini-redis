@@ -6,6 +6,7 @@ import dev.learning.storage.StorageTestClock;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -101,6 +102,64 @@ class CommandDispatcherTest {
         RespValue request = new RespValue.ArrayValue(List.of(bulkString("TTL"), new RespValue.IntegerValue(123)));
 
         assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(request));
+    }
+
+    @Test
+    void shouldReturnZeroWhenExpireKeyIsMissing() {
+        assertEquals(new RespValue.IntegerValue(0), dispatch("EXPIRE", "missing", "10"));
+        assertEquals(new RespValue.IntegerValue(-2), dispatch("TTL", "missing"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} on an expired key returns RESP integer zero")
+    @ValueSource(strings = {"10", "0"})
+    void shouldReturnZeroWhenExpireKeyIsAlreadyExpired(String seconds) {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "1"));
+        clock.advanceMillis(1_000);
+
+        assertEquals(new RespValue.IntegerValue(0), dispatch("EXPIRE", "name", seconds));
+        assertEquals(new RespValue.IntegerValue(-2), dispatch("TTL", "name"));
+    }
+
+    @Test
+    void shouldSetExpirationOnPersistentKeyWithoutChangingItsValue() {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice"));
+
+        assertEquals(new RespValue.IntegerValue(1), dispatch("EXPIRE", "name", "10"));
+        assertEquals(new RespValue.IntegerValue(10), dispatch("TTL", "name"));
+        assertBulkStringEquals("Alice", dispatch("GET", "name"));
+    }
+
+    @Test
+    void shouldReplaceExistingExpirationRelativeToCurrentTime() {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "10"));
+        clock.advanceMillis(4_000);
+
+        assertEquals(new RespValue.IntegerValue(1), dispatch("EXPIRE", "name", "20"));
+        assertEquals(new RespValue.IntegerValue(20), dispatch("TTL", "name"));
+        assertBulkStringEquals("Alice", dispatch("GET", "name"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} deletes a live key")
+    @ValueSource(strings = {"0", "-5"})
+    void shouldDeleteLiveKeyWhenExpireTimeIsNonPositive(String seconds) {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "10"));
+
+        assertEquals(new RespValue.IntegerValue(1), dispatch("EXPIRE", "name", seconds));
+        assertEquals(new RespValue.BulkString(null), dispatch("GET", "name"));
+    }
+
+    @ParameterizedTest(name = "EXPIRE {0} returns an error and preserves the entry")
+    @ValueSource(strings = {"9223372036854775808", "9223372036854775807", "9223372036854775"})
+    void shouldReturnErrorAndPreserveValueAndDeadlineWhenExpireOverflows(String seconds) {
+        clock.advanceMillis(1_000);
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "10"));
+
+        assertInstanceOf(RespValue.ErrorValue.class, dispatch("EXPIRE", "name", seconds));
+        assertEquals(new RespValue.IntegerValue(10), dispatch("TTL", "name"));
+        clock.advanceMillis(9_999);
+        assertBulkStringEquals("Alice", dispatch("GET", "name"));
+        clock.advanceMillis(1);
+        assertEquals(new RespValue.IntegerValue(-2), dispatch("TTL", "name"));
     }
 
     @Test
