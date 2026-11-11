@@ -2,6 +2,8 @@ package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -126,6 +128,34 @@ public class InMemoryStorageTest {
         now.addAndGet(1_000);
 
         assertEquals(0, storage.del("name"));
+    }
+
+    @Test
+    void shouldReturnMinusTwoForMissingTtlKey() {
+        InMemoryStorage storage = new StorageTestClock().newStorage();
+
+        assertEquals(-2L, storage.ttl("missing"));
+    }
+
+    @Test
+    void shouldReturnMinusOneForPersistentTtlKey() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice"));
+        clock.advanceMillis(DAYS.toMillis(1));
+
+        assertEquals(-1L, storage.ttl("name"));
+    }
+
+    @ParameterizedTest(name = "{0} ms remaining returns {1}")
+    @CsvSource({"10000, 10", "9600, 10", "9400, 9", "400, 0", "0, -2"})
+    void shouldReturnTtlForExpiringKey(long remainingMillis, long expectedSeconds) {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        clock.advanceMillis(10_000 - remainingMillis);
+
+        assertEquals(expectedSeconds, storage.ttl("name"));
     }
 
     @Test

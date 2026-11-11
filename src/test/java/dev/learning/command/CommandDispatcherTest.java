@@ -4,6 +4,8 @@ import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 import dev.learning.storage.StorageTestClock;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -63,6 +65,42 @@ class CommandDispatcherTest {
 
         RespValue.BulkString value = assertInstanceOf(RespValue.BulkString.class, result);
         assertNull(value.value());
+    }
+
+    @Test
+    void shouldReturnMinusTwoForMissingTtlKey() {
+        assertEquals(new RespValue.IntegerValue(-2), dispatch("TTL", "missing"));
+    }
+
+    @Test
+    void shouldReturnMinusOneForPersistentTtlKey() {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice"));
+
+        assertEquals(new RespValue.IntegerValue(-1), dispatch("TTL", "name"));
+    }
+
+    @ParameterizedTest(name = "{0} ms remaining returns RESP integer {1}")
+    @CsvSource({"10000, 10", "9600, 10", "9400, 9", "400, 0", "0, -2"})
+    void shouldReturnTtlForExpiringKey(long remainingMillis, long expectedSeconds) {
+        assertEquals(new RespValue.SimpleString("OK"), dispatch("SET", "name", "Alice", "EX", "10"));
+        clock.advanceMillis(10_000 - remainingMillis);
+
+        assertEquals(new RespValue.IntegerValue(expectedSeconds), dispatch("TTL", "name"));
+    }
+
+    @Test
+    void shouldRejectTtlWithWrongArgumentCount() {
+        RespValue.ErrorValue expected = new RespValue.ErrorValue("ERR wrong number of arguments for 'ttl' command");
+
+        assertEquals(expected, dispatch("TTL"));
+        assertEquals(expected, dispatch("TTL", "name", "extra"));
+    }
+
+    @Test
+    void shouldRejectTtlWithInvalidKeyType() {
+        RespValue request = new RespValue.ArrayValue(List.of(bulkString("TTL"), new RespValue.IntegerValue(123)));
+
+        assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(request));
     }
 
     @Test
