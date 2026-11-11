@@ -232,6 +232,50 @@ public class InMemoryStorageTest {
     }
 
     @Test
+    void shouldRemoveExpirationWhenKeyHasTtl() {
+        InMemoryStorage storage = new StorageTestClock().newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        assertEquals(10L, storage.ttl("name"));
+
+        assertEquals(1, storage.persist("name"));
+        assertEquals(-1L, storage.ttl("name"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenKeyHasNoExpiration() {
+        InMemoryStorage storage = new StorageTestClock().newStorage();
+        assertTrue(storage.set("name", "Alice"));
+
+        assertEquals(0, storage.persist("name"));
+        assertEquals(-1L, storage.ttl("name"));
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenKeyHasExpired() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(1_000);
+
+        assertEquals(0, storage.persist("name"));
+        assertEquals(-2L, storage.ttl("name"));
+    }
+
+    @Test
+    void shouldPreserveValueAfterExpirationIsRemoved() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(500);
+
+        assertEquals(1, storage.persist("name"));
+        clock.advanceMillis(501);
+
+        assertEquals(Optional.of("Alice"), storage.get("name"));
+    }
+
+    @Test
     void shouldReturnOneWhenExistingKeyIsDeleted() {
         // Arrange
         InMemoryStorage storage = new InMemoryStorage();
