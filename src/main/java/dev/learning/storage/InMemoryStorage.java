@@ -180,4 +180,24 @@ public class InMemoryStorage {
 
         return result[0];
     }
+
+    int cleanupExpiredEntries() {
+        int[] cleanupEntries = {0};
+        for (String key : data.keySet()) {
+            data.computeIfPresent(key, (k, entry) -> {
+               if (entry.ex() != null && entry.ex() <= currentTimeMillis.getAsLong()) {
+                   cleanupEntries[0] = cleanupEntries[0] + 1;
+                   return null;
+               }
+
+                return entry;
+            });
+        }
+
+        return cleanupEntries[0];
+    }
+
+    public Runnable expirationCleanupTask() {
+        return this::cleanupExpiredEntries;
+    }
 }
