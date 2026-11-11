@@ -86,12 +86,29 @@ public class CommandDispatcher {
             case CommandType.DEL -> executeDelCommand(elements);
             case CommandType.EXISTS -> executeExistCommand(elements);
             case CommandType.GET -> executeGetCommand(elements);
+            case CommandType.TTL -> executeTTLCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeTTLCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'ttl' command");
+        }
+
+        Optional<String> value = extractBulkOrSimpleString(elements.get(1));
+
+        if (value.isEmpty()) {
+            return new RespValue.ErrorValue("The TTL command is invalid");
+        }
+
+        long result = storage.ttl(value.get());
+
+        return new RespValue.IntegerValue(result);
     }
 
     private RespValue executeGetCommand(List<RespValue> elements) {

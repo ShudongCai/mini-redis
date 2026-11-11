@@ -21,7 +21,6 @@ public class InMemoryStorage {
         this.data = new ConcurrentHashMap<>();
     }
 
-
     public Optional<String> get(String key) {
         StoredEntry entry = getLiveEntry(key);
         return entry == null ? Optional.empty() : Optional.of(entry.value());
@@ -98,5 +97,33 @@ public class InMemoryStorage {
 
     private static boolean isExpired(StoredEntry entry, long now) {
         return entry.ex() != null && now >= entry.ex();
+    }
+
+    public long ttl(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        long[] result = {-2L};
+
+        data.computeIfPresent(key, (k, value) -> {
+            if (value.ex() == null) {
+                result[0] = -1;
+                return value;
+            }
+
+            long now = currentTimeMillis.getAsLong();
+
+            if (value.ex() <= now) {
+                return null;
+            }
+
+            long remainingMillis = value.ex() - now;
+            result[0] = remainingMillis / 1000
+                    + (remainingMillis % 1000 >= 500 ? 1 : 0);
+            return value;
+        });
+
+        return result[0];
     }
 }
