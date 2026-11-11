@@ -157,4 +157,27 @@ public class InMemoryStorage {
 
         return result[0];
     }
+
+    public int persist(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("The key is null");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, value) -> {
+           if (value.ex() == null) {
+                return value;
+           }
+
+           if (value.ex() <= currentTimeMillis.getAsLong()) {
+               return null;
+           }
+
+           result[0] = 1;
+           return new StoredEntry(value.value(), null);
+        });
+
+        return result[0];
+    }
 }

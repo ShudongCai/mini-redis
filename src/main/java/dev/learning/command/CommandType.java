@@ -7,7 +7,8 @@ public enum CommandType {
     DEL("del"),
     EXISTS("exists"),
     TTL("ttl"),
-    EXPIRE("expire");
+    EXPIRE("expire"),
+    PERSIST("persist");
 
     private final String value;
 

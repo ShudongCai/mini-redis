@@ -90,6 +90,7 @@ public class CommandDispatcher {
             case CommandType.GET -> executeGetCommand(elements);
             case CommandType.TTL -> executeTTLCommand(elements);
             case CommandType.EXPIRE -> executeExpireCommand(elements);
+            case CommandType.PERSIST -> executePersistCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
@@ -98,21 +99,36 @@ public class CommandDispatcher {
         };
     }
 
+    private RespValue executePersistCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'persist' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("The Persist command is invalid");
+        }
+
+        int result = storage.persist(key.get());
+        return new RespValue.IntegerValue(result);
+    }
+
     private RespValue executeExpireCommand(List<RespValue> elements) {
         if (elements.size() != 3) {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'expire' command");
         }
 
-        Optional<String> value = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
         Optional<String> sTTL = extractBulkOrSimpleString(elements.get(2));
 
-        if (value.isEmpty() || sTTL.isEmpty()) {
+        if (key.isEmpty() || sTTL.isEmpty()) {
             return new RespValue.ErrorValue("The Expire command is invalid");
         }
 
         try {
             long seconds = Long.parseLong(sTTL.get());
-            int result = storage.expire(value.get(), seconds);
+            int result = storage.expire(key.get(), seconds);
             return new RespValue.IntegerValue(result);
         } catch (NumberFormatException | ArithmeticException e) {
             return new RespValue.ErrorValue(
@@ -126,13 +142,13 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'ttl' command");
         }
 
-        Optional<String> value = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
 
-        if (value.isEmpty()) {
+        if (key.isEmpty()) {
             return new RespValue.ErrorValue("The TTL command is invalid");
         }
 
-        long result = storage.ttl(value.get());
+        long result = storage.ttl(key.get());
 
         return new RespValue.IntegerValue(result);
     }
