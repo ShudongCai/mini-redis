@@ -411,6 +411,95 @@ class CommandDispatcherTest {
         assertBulkStringEquals("original", dispatch("GET", "items"));
     }
 
+    @Test
+    void shouldReturnListLengthWhenLlenIsExecuted() {
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertEquals(new RespValue.IntegerValue(3), dispatch("LLEN", "items"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenLlenKeyDoesNotExist() {
+        assertEquals(new RespValue.IntegerValue(0), dispatch("LLEN", "missing"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenLlenKeyHasExpired() {
+        storage.rpush("items", List.of("A"));
+        assertEquals(1, storage.expire("items", 1));
+        clock.advanceMillis(1_000);
+
+        assertEquals(new RespValue.IntegerValue(0), dispatch("LLEN", "items"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenLlenKeyContainsStringValue() {
+        storage.set("items", "original");
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("LLEN", "items"));
+        assertBulkStringEquals("original", dispatch("GET", "items"));
+    }
+
+    @Test
+    void shouldRejectLlenWithWrongArgumentCount() {
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "ERR wrong number of arguments for 'llen' command");
+
+        assertEquals(expected, dispatch("LLEN"));
+        assertEquals(expected, dispatch("LLEN", "items", "extra"));
+    }
+
+    @Test
+    void shouldReturnBulkStringsInOrderForLrangeWithNegativeEndIndex() {
+        storage.rpush("items", List.of("A", "B", "\u4E2D"));
+
+        RespValue.ArrayValue result = assertInstanceOf(
+                RespValue.ArrayValue.class, dispatch("LRANGE", "items", "1", "-1"));
+
+        assertEquals(2, result.elements().size());
+        assertBulkStringEquals("B", result.elements().get(0));
+        assertBulkStringEquals("\u4E2D", result.elements().get(1));
+    }
+
+    @Test
+    void shouldReturnEmptyArrayWhenLrangeSelectsNoElements() {
+        storage.rpush("items", List.of("A", "B", "C"));
+        RespValue.ArrayValue empty = new RespValue.ArrayValue(List.of());
+
+        assertEquals(empty, dispatch("LRANGE", "missing", "0", "-1"));
+        assertEquals(empty, dispatch("LRANGE", "items", "3", "-1"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenLrangeKeyContainsStringValue() {
+        storage.set("items", "original");
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("LRANGE", "items", "0", "-1"));
+        assertBulkStringEquals("original", dispatch("GET", "items"));
+    }
+
+    @Test
+    void shouldRejectLrangeWithInvalidIndexes() {
+        storage.rpush("items", List.of("A"));
+        RespValue.ErrorValue expected = new RespValue.ErrorValue("ERR value is not an integer or out of range");
+
+        assertEquals(expected, dispatch("LRANGE", "items", "not-an-integer", "0"));
+        assertEquals(expected, dispatch("LRANGE", "items", "0", "9223372036854775808"));
+    }
+
+    @Test
+    void shouldRejectLrangeWithWrongArgumentCount() {
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "ERR wrong number of arguments for 'lrange' command");
+
+        assertEquals(expected, dispatch("LRANGE", "items", "0"));
+        assertEquals(expected, dispatch("LRANGE", "items", "0", "-1", "extra"));
+    }
+
     private RespValue dispatch(String... arguments) {
         List<RespValue> elements = Arrays.stream(arguments)
                 .<RespValue>map(CommandDispatcherTest::bulkString)

@@ -131,6 +131,8 @@ public class CommandDispatcher {
 
         } catch (NumberFormatException e) {
             return new RespValue.ErrorValue("ERR value is not an integer or out of range");
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
     }
 
@@ -145,7 +147,11 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR invalid key argument");
         }
 
-        return new RespValue.IntegerValue(storage.llen(key.get()));
+        try {
+            return new RespValue.IntegerValue(storage.llen(key.get()));
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
     }
 
     private RespValue executeRPopCommand(List<RespValue> elements) {
@@ -286,15 +292,17 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR invalid key");
         }
 
-        Optional<String> result = storage.get(key.get());
+        try {
+            Optional<String> result = storage.get(key.get());
 
-        if (result.isEmpty()) {
-            return new RespValue.BulkString(null);
+            return result.map(s -> new RespValue.BulkString(
+                    s.getBytes(StandardCharsets.UTF_8)
+            )).orElseGet(() -> new RespValue.BulkString(null));
+
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
 
-        return new RespValue.BulkString(
-                result.get().getBytes(StandardCharsets.UTF_8)
-        );
     }
 
     private RespValue executeExistCommand(List<RespValue> elements) {

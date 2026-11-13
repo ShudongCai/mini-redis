@@ -8,7 +8,6 @@ import dev.learning.storage.model.StringValue;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
@@ -36,7 +35,7 @@ public class InMemoryStorage {
             return Optional.of(value);
         }
 
-        throw new IllegalStateException("Wrong Redis value type");
+        throw new WrongTypeException();
     }
 
     public boolean set(String key, String value) {

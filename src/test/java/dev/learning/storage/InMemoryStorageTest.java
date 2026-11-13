@@ -11,6 +11,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.stream.IntStream;
 
 import static java.util.concurrent.TimeUnit.DAYS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -183,6 +185,94 @@ public class InMemoryStorageTest {
 
         assertThrows(WrongTypeException.class, () -> storage.lpop("items"));
         assertThrows(WrongTypeException.class, () -> storage.rpop("items"));
+        assertEquals(Optional.of("original"), storage.get("items"));
+    }
+
+    @Test
+    void shouldReturnCurrentListLengthWhenLlenIsCalled() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertEquals(3, storage.llen("items"));
+        assertEquals(Optional.of("A"), storage.lpop("items"));
+        assertEquals(2, storage.llen("items"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenLlenKeyDoesNotExist() {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        assertEquals(0, storage.llen("missing"));
+    }
+
+    @Test
+    void shouldReturnZeroWhenLlenKeyHasExpired() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        storage.rpush("items", List.of("A", "B"));
+        assertEquals(1, storage.expire("items", 1));
+        clock.advanceMillis(1_000);
+
+        assertEquals(0, storage.llen("items"));
+    }
+
+    @Test
+    void shouldRejectLlenWhenKeyContainsStringValue() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.set("items", "original");
+
+        assertThrows(WrongTypeException.class, () -> storage.llen("items"));
+        assertEquals(Optional.of("original"), storage.get("items"));
+    }
+
+    @Test
+    void shouldReturnElementsIncludingBothLrangeEndpoints() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C", "D"));
+
+        assertEquals(List.of("B", "C"), storage.lrange("items", 1, 2));
+        assertEquals(List.of("A", "B", "C", "D"), storage.lrange("items", 0, 3));
+    }
+
+    @Test
+    void shouldResolveNegativeLrangeIndexesAndClampToListBounds() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C", "D"));
+
+        assertEquals(List.of("B", "C"), storage.lrange("items", -3, -2));
+        assertEquals(List.of("C", "D"), storage.lrange("items", -2, -1));
+        assertEquals(List.of("A", "B", "C", "D"),
+                storage.lrange("items", Long.MIN_VALUE, Long.MAX_VALUE));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenLrangeSelectsNoElements() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertEquals(List.of(), storage.lrange("missing", 0, -1));
+        assertEquals(List.of(), storage.lrange("items", 3, 10));
+        assertEquals(List.of(), storage.lrange("items", 2, 1));
+        assertEquals(List.of(), storage.lrange("items", 0, -4));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenLrangeKeyHasExpired() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        storage.rpush("items", List.of("A", "B"));
+        assertEquals(1, storage.expire("items", 1));
+        clock.advanceMillis(1_000);
+
+        assertEquals(List.of(), storage.lrange("items", 0, -1));
+    }
+
+    @Test
+    void shouldRejectLrangeWhenKeyContainsStringValue() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.set("items", "original");
+
+        assertThrows(WrongTypeException.class, () -> storage.lrange("items", 0, -1));
         assertEquals(Optional.of("original"), storage.get("items"));
     }
 
@@ -645,6 +735,130 @@ public class InMemoryStorageTest {
             }
             return now.get();
         }
+    }
+
+    @Test
+    void shouldPreserveAllElementsWhenPushingConcurrently() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        int workers = 8;
+        int elementsPerWorker = 64;
+        List<String> expected = IntStream.range(0, workers * elementsPerWorker)
+                .mapToObj(Integer::toString)
+                .toList();
+        CyclicBarrier start = new CyclicBarrier(workers);
+        List<Future<Void>> pushes = new ArrayList<>();
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        try {
+            for (int worker = 0; worker < workers; worker++) {
+                int first = worker * elementsPerWorker;
+                boolean pushLeft = worker % 2 == 0;
+                pushes.add(executor.submit(() -> {
+                    start.await(5, SECONDS);
+                    for (String value : expected.subList(first, first + elementsPerWorker)) {
+                        if (pushLeft) {
+                            storage.lpush("items", List.of(value));
+                        } else {
+                            storage.rpush("items", List.of(value));
+                        }
+                    }
+                    return null;
+                }));
+            }
+            for (Future<Void> push : pushes) {
+                push.get(10, SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        List<String> actual = storage.lrange("items", 0, -1);
+        assertEquals(expected.size(), actual.size());
+        assertEquals(new HashSet<>(expected), new HashSet<>(actual));
+    }
+
+    @Test
+    void shouldPopEachElementAtMostOnceWhenPoppingConcurrently() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        int workers = 8;
+        int popsPerWorker = 64;
+        List<String> expected = IntStream.range(0, workers * popsPerWorker)
+                .mapToObj(Integer::toString)
+                .toList();
+        storage.rpush("items", expected);
+        CyclicBarrier start = new CyclicBarrier(workers);
+        List<Future<List<String>>> pops = new ArrayList<>();
+        List<String> popped = new ArrayList<>();
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        try {
+            for (int worker = 0; worker < workers; worker++) {
+                boolean popLeft = worker % 2 == 0;
+                pops.add(executor.submit(() -> {
+                    start.await(5, SECONDS);
+                    List<String> values = new ArrayList<>();
+                    for (int attempt = 0; attempt < popsPerWorker; attempt++) {
+                        Optional<String> value = popLeft ? storage.lpop("items") : storage.rpop("items");
+                        value.ifPresent(values::add);
+                    }
+                    return values;
+                }));
+            }
+            for (Future<List<String>> pop : pops) {
+                popped.addAll(pop.get(10, SECONDS));
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(expected.size(), popped.size());
+        assertEquals(new HashSet<>(expected), new HashSet<>(popped));
+        assertFalse(storage.exists("items"));
+    }
+
+    @Test
+    void shouldReturnConsistentSnapshotWhenLrangeRunsConcurrentlyWithPush() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        int rounds = 128;
+        int batchSize = 8;
+        List<String> expected = IntStream.range(0, (rounds + 1) * batchSize)
+                .mapToObj(Integer::toString)
+                .toList();
+        storage.rpush("items", expected.subList(0, batchSize));
+        CyclicBarrier startRound = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        try {
+            Future<Void> pushes = executor.submit(() -> {
+                for (int round = 1; round <= rounds; round++) {
+                    int first = round * batchSize;
+                    startRound.await(5, SECONDS);
+                    storage.rpush("items", expected.subList(first, first + batchSize));
+                }
+                return null;
+            });
+            Future<Void> reads = executor.submit(() -> {
+                for (int round = 1; round <= rounds; round++) {
+                    int beforeSize = round * batchSize;
+                    int afterSize = beforeSize + batchSize;
+                    startRound.await(5, SECONDS);
+                    List<String> snapshot = storage.lrange("items", 0, -1);
+
+                    // The next batch waits at the barrier until this snapshot is checked.
+                    assertTrue(snapshot.size() == beforeSize || snapshot.size() == afterSize,
+                            "Round " + round + " returned a partial batch");
+                    assertEquals(expected.subList(0, snapshot.size()), snapshot, "Round " + round);
+                }
+                return null;
+            });
+
+            reads.get(10, SECONDS);
+            pushes.get(10, SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(expected, storage.lrange("items", 0, -1));
     }
 
     @Test
