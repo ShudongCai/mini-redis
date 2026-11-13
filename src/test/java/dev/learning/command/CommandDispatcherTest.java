@@ -366,6 +366,51 @@ class CommandDispatcherTest {
         assertFalse(storage.exists("items"));
     }
 
+    @Test
+    void shouldReturnFirstElementWhenLpopIsCalled() {
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertBulkStringEquals("A", dispatch("LPOP", "items"));
+        assertBulkStringEquals("B", dispatch("LPOP", "items"));
+    }
+
+    @Test
+    void shouldReturnLastElementWhenRpopIsCalled() {
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertBulkStringEquals("C", dispatch("RPOP", "items"));
+        assertBulkStringEquals("B", dispatch("RPOP", "items"));
+    }
+
+    @Test
+    void shouldRemoveKeyWhenLastElementIsPopped() {
+        storage.rpush("left", List.of("A"));
+        storage.rpush("right", List.of("B"));
+
+        assertBulkStringEquals("A", dispatch("LPOP", "left"));
+        assertEquals(new RespValue.IntegerValue(0), dispatch("EXISTS", "left"));
+        assertBulkStringEquals("B", dispatch("RPOP", "right"));
+        assertEquals(new RespValue.IntegerValue(0), dispatch("EXISTS", "right"));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenPoppingMissingKey() {
+        assertEquals(new RespValue.BulkString(null), dispatch("LPOP", "missing"));
+        assertEquals(new RespValue.BulkString(null), dispatch("RPOP", "missing"));
+        assertEquals(new RespValue.IntegerValue(0), dispatch("EXISTS", "missing"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenPoppingStringValue() {
+        storage.set("items", "original");
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("LPOP", "items"));
+        assertEquals(expected, dispatch("RPOP", "items"));
+        assertBulkStringEquals("original", dispatch("GET", "items"));
+    }
+
     private RespValue dispatch(String... arguments) {
         List<RespValue> elements = Arrays.stream(arguments)
                 .<RespValue>map(CommandDispatcherTest::bulkString)

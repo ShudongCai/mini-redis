@@ -137,6 +137,55 @@ public class InMemoryStorageTest {
         assertEquals(-1L, storage.ttl("items"));
     }
 
+    @Test
+    void shouldReturnFirstElementWhenLpopIsCalled() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertEquals(Optional.of("A"), storage.lpop("items"));
+        assertEquals(Optional.of("B"), storage.lpop("items"));
+    }
+
+    @Test
+    void shouldReturnLastElementWhenRpopIsCalled() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("items", List.of("A", "B", "C"));
+
+        assertEquals(Optional.of("C"), storage.rpop("items"));
+        assertEquals(Optional.of("B"), storage.rpop("items"));
+    }
+
+    @Test
+    void shouldRemoveKeyWhenLastElementIsPopped() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.rpush("left", List.of("A"));
+        storage.rpush("right", List.of("B"));
+
+        assertEquals(Optional.of("A"), storage.lpop("left"));
+        assertFalse(storage.exists("left"));
+        assertEquals(Optional.of("B"), storage.rpop("right"));
+        assertFalse(storage.exists("right"));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenPoppingMissingKey() {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        assertEquals(Optional.empty(), storage.lpop("missing"));
+        assertEquals(Optional.empty(), storage.rpop("missing"));
+        assertFalse(storage.exists("missing"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenPoppingStringValue() {
+        InMemoryStorage storage = new InMemoryStorage();
+        storage.set("items", "original");
+
+        assertThrows(WrongTypeException.class, () -> storage.lpop("items"));
+        assertThrows(WrongTypeException.class, () -> storage.rpop("items"));
+        assertEquals(Optional.of("original"), storage.get("items"));
+    }
+
     private static List<String> readListValues(InMemoryStorage storage, String key)
             throws ReflectiveOperationException {
         // Storage has no list read operation yet. Snapshot the deque for order assertions.

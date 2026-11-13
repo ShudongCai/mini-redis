@@ -123,13 +123,13 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR invalid key argument");
         }
 
-        Optional<String> temp;
-        if (isLPop) {
-            temp = storage.lpop(key.get());
-        } else {
-            temp = storage.rpop(key.get());
+        try {
+            Optional<String> value = isLPop ? storage.lpop(key.get()) : storage.rpop(key.get());
+            return value.map(s -> new RespValue.BulkString(s.getBytes(StandardCharsets.UTF_8)))
+                    .orElseGet(() -> new RespValue.BulkString(null));
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
-        return temp.map(s -> new RespValue.BulkString(s.getBytes(StandardCharsets.UTF_8))).orElseGet(() -> new RespValue.BulkString(null));
     }
 
     private RespValue executeRPushCommand(List<RespValue> elements) {
