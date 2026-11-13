@@ -2,6 +2,7 @@ package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
 import dev.learning.storage.model.StoredEntry;
+import dev.learning.storage.model.StringValue;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,7 +24,16 @@ public class InMemoryStorage {
 
     public Optional<String> get(String key) {
         StoredEntry entry = getLiveEntry(key);
-        return entry == null ? Optional.empty() : Optional.of(entry.value());
+
+        if (entry == null) {
+            return Optional.empty();
+        }
+
+        if (entry.value() instanceof StringValue(String value)) {
+            return Optional.of(value);
+        }
+
+        throw new IllegalStateException("Wrong Redis value type");
     }
 
     public boolean set(String key, String value) {
@@ -31,13 +41,13 @@ public class InMemoryStorage {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
 
-        data.put(key, new StoredEntry(value, null));
+        data.put(key, new StoredEntry(new StringValue(value), null));
         return true;
     }
 
     public boolean set(String key, String value, SetOptions subOptions) {
-        if (key == null || value == null) {
-            throw new IllegalArgumentException("Key or Value should not be null");
+        if (key == null || value == null || subOptions == null) {
+            throw new IllegalArgumentException("Key, Value or SubOption should not be null");
         }
 
         Long ttlSeconds = subOptions.ttlSeconds();
@@ -61,7 +71,7 @@ public class InMemoryStorage {
             }
 
             written[0] = true;
-            return new StoredEntry(value, newExpireTime);
+            return new StoredEntry(new StringValue(value), newExpireTime);
         });
 
         return written[0];

@@ -1,7 +1,7 @@
 package dev.learning.storage.model;
 
 public record StoredEntry (
-    String value,
+    RedisValue value,
     Long ex
-) {
+) implements RedisValue{
 }
