@@ -201,6 +201,78 @@ public class InMemoryStorage {
         return getLiveEntry(key) != null;
     }
 
+    public int llen(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, entry) -> {
+            if (isExpired(entry, currentTimeMillis.getAsLong())) {
+                return null;
+            }
+
+            if (entry.value() instanceof ListValue(Deque<String> values)) {
+                result[0] = values.size();
+                return entry;
+            }
+
+            throw new WrongTypeException();
+        });
+
+        return result[0];
+    }
+
+    public List<String> lrange(String key, long start, long end) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        List<String> result = new ArrayList<>();
+        long[] temp = {start, end};
+
+        data.computeIfPresent(key, (k, entry) -> {
+           if (isExpired(entry, currentTimeMillis.getAsLong())) {
+               return null;
+           }
+
+            if (entry.value() instanceof ListValue(Deque<String> values)) {
+                long size = values.size();
+
+                long from = start < 0 ? start + size : start;
+                long to = end < 0 ? end + size : end;
+
+                from = Math.max(0, from);
+                to = Math.min(size - 1, to);
+
+                if (from > to) {
+                    return entry;
+                }
+
+                long index = 0;
+
+                for (String value : values) {
+                    if (index > to) {
+                        break;
+                    }
+
+                    if (index >= from) {
+                        result.add(value);
+                    }
+
+                    index++;
+                }
+
+                return entry;
+            }
+
+           throw new WrongTypeException();
+        });
+
+        return result;
+    }
+
     private StoredEntry getLiveEntry(String key) {
         return data.computeIfPresent(key, (k, entry) ->
                 isExpired(entry, currentTimeMillis.getAsLong()) ? null : entry);

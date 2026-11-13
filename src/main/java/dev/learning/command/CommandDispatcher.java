@@ -94,12 +94,58 @@ public class CommandDispatcher {
             case CommandType.RPUSH -> executeRPushCommand(elements);
             case CommandType.RPOP -> executeRPopCommand(elements);
             case CommandType.LPOP -> executeLPopCommand(elements);
+            case CommandType.LLEN -> executeLlenCommand(elements);
+            case CommandType.LRANGE -> executeLrangeCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeLrangeCommand(List<RespValue> elements) {
+        if (elements.size() != 4) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'lrange' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> start = extractBulkOrSimpleString(elements.get(2));
+        Optional<String> end = extractBulkOrSimpleString(elements.get(3));
+
+        if (key.isEmpty() || start.isEmpty() || end.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid argument");
+        }
+
+        try {
+            long startL = Long.parseLong(start.get());
+            long endL = Long.parseLong(end.get());
+            List<String> temp = storage.lrange(key.get(), startL, endL);
+            List<RespValue> result = new ArrayList<>();
+
+            for (String t : temp) {
+                result.add(new RespValue.BulkString(t.getBytes(StandardCharsets.UTF_8)));
+            }
+
+            return new RespValue.ArrayValue(result);
+
+        } catch (NumberFormatException e) {
+            return new RespValue.ErrorValue("ERR value is not an integer or out of range");
+        }
+    }
+
+    private RespValue executeLlenCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'llen' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        return new RespValue.IntegerValue(storage.llen(key.get()));
     }
 
     private RespValue executeRPopCommand(List<RespValue> elements) {

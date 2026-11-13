@@ -12,7 +12,9 @@ public enum CommandType {
     RPUSH("rpush"),
     LPUSH("lpush"),
     RPOP("rpop"),
-    LPOP("lpop");
+    LPOP("lpop"),
+    LRANGE("lrange"),
+    LLEN("llen");
 
     private final String value;
 
