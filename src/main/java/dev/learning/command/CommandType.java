@@ -10,7 +10,9 @@ public enum CommandType {
     EXPIRE("expire"),
     PERSIST("persist"),
     RPUSH("rpush"),
-    LPUSH("lpush");
+    LPUSH("lpush"),
+    RPOP("rpop"),
+    LPOP("lpop");
 
     private final String value;
 

@@ -8,6 +8,7 @@ import dev.learning.storage.model.StringValue;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
@@ -132,6 +133,49 @@ public class InMemoryStorage {
         });
 
         return result[0];
+    }
+
+    public Optional<String> lpop(String key) {
+        return pop(key, true);
+    }
+
+    public Optional<String> rpop(String key) {
+        return pop(key, false);
+    }
+
+    private Optional<String> pop(String key, boolean isLPop) {
+        if (key == null) {
+            throw new IllegalArgumentException("The key should not be null");
+        }
+
+        String[] result = {null};
+
+        data.computeIfPresent(key, (k, entry) -> {
+           if (isExpired(entry, currentTimeMillis.getAsLong())) {
+               return null;
+           }
+
+           if (entry.value() instanceof ListValue(Deque<String> temp)) {
+               if (temp == null || temp.isEmpty()) {
+                   return null;
+               }
+               if (isLPop) {
+                   result[0] = temp.pollFirst();
+               } else {
+                   result[0] = temp.pollLast();
+               }
+
+               if (temp.isEmpty()) {
+                    return null;
+               }
+
+               return entry;
+           }
+
+           throw new WrongTypeException();
+        });
+
+        return result[0] == null ? Optional.empty() : Optional.of(result[0]);
     }
 
     public int del(String key) {

@@ -92,12 +92,44 @@ public class CommandDispatcher {
             case CommandType.PERSIST -> executePersistCommand(elements);
             case CommandType.LPUSH -> executeLPushCommand(elements);
             case CommandType.RPUSH -> executeRPushCommand(elements);
+            case CommandType.RPOP -> executeRPopCommand(elements);
+            case CommandType.LPOP -> executeLPopCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeRPopCommand(List<RespValue> elements) {
+        return pop(elements, false);
+    }
+
+    private RespValue executeLPopCommand(List<RespValue> elements) {
+        return pop(elements, true);
+    }
+
+    private RespValue pop(List<RespValue> elements, boolean isLPop) {
+        String command = isLPop ? "lpop" : "rpop";
+
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for '" + command + "' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        Optional<String> temp;
+        if (isLPop) {
+            temp = storage.lpop(key.get());
+        } else {
+            temp = storage.rpop(key.get());
+        }
+        return temp.map(s -> new RespValue.BulkString(s.getBytes(StandardCharsets.UTF_8))).orElseGet(() -> new RespValue.BulkString(null));
     }
 
     private RespValue executeRPushCommand(List<RespValue> elements) {
