@@ -1,13 +1,18 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
+import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.model.ListValue;
+import dev.learning.storage.model.StoredEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -62,6 +67,85 @@ public class InMemoryStorageTest {
         //Assert
         assertTrue(storage.get("name").isPresent());
         assertEquals("Alice And Ben", storage.get("name").get());
+    }
+
+    @Test
+    void shouldCreateListWhenKeyDoesNotExist() throws ReflectiveOperationException {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        assertEquals(2L, storage.rpush("items", List.of("A", "B")));
+        assertEquals(List.of("A", "B"), readListValues(storage, "items"));
+    }
+
+    @Test
+    void shouldPrependElementsWhenLpushIsCalled() throws ReflectiveOperationException {
+        InMemoryStorage storage = new InMemoryStorage();
+        assertEquals(1L, storage.rpush("items", List.of("tail")));
+
+        assertEquals(4L, storage.lpush("items", List.of("A", "B", "C")));
+        assertEquals(List.of("C", "B", "A", "tail"), readListValues(storage, "items"));
+    }
+
+    @Test
+    void shouldAppendElementsWhenRpushIsCalled() throws ReflectiveOperationException {
+        InMemoryStorage storage = new InMemoryStorage();
+
+        assertEquals(3L, storage.rpush("items", List.of("A", "B", "C")));
+        assertEquals(List.of("A", "B", "C"), readListValues(storage, "items"));
+
+        assertEquals(4L, storage.rpush("items", List.of("D")));
+        assertEquals(List.of("A", "B", "C", "D"), readListValues(storage, "items"));
+    }
+
+    @Test
+    void shouldPreserveExpirationWhenPushingToExistingList() {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertEquals(1L, storage.rpush("items", List.of("B")));
+        assertEquals(1, storage.expire("items", 10));
+        clock.advanceMillis(4_000);
+
+        assertEquals(2L, storage.lpush("items", List.of("A")));
+        assertEquals(6L, storage.ttl("items"));
+        assertEquals(3L, storage.rpush("items", List.of("C")));
+        assertEquals(6L, storage.ttl("items"));
+
+        clock.advanceMillis(6_000);
+        assertFalse(storage.exists("items"));
+    }
+
+    @Test
+    void shouldRejectPushWhenKeyContainsStringValue() {
+        InMemoryStorage storage = new InMemoryStorage();
+        assertTrue(storage.set("items", "original"));
+
+        assertThrows(WrongTypeException.class, () -> storage.lpush("items", List.of("A")));
+        assertEquals(Optional.of("original"), storage.get("items"));
+        assertThrows(WrongTypeException.class, () -> storage.rpush("items", List.of("B")));
+        assertEquals(Optional.of("original"), storage.get("items"));
+    }
+
+    @Test
+    void shouldCreateNewListWhenPreviousValueHasExpired() throws ReflectiveOperationException {
+        StorageTestClock clock = new StorageTestClock();
+        InMemoryStorage storage = clock.newStorage();
+        assertTrue(storage.set("items", "expired string", SetOptions.builder().ttlSeconds(1L).build()));
+        clock.advanceMillis(1_000);
+
+        assertEquals(3L, storage.lpush("items", List.of("A", "B", "C")));
+        assertEquals(List.of("C", "B", "A"), readListValues(storage, "items"));
+        assertEquals(-1L, storage.ttl("items"));
+    }
+
+    private static List<String> readListValues(InMemoryStorage storage, String key)
+            throws ReflectiveOperationException {
+        // Storage has no list read operation yet. Snapshot the deque for order assertions.
+        Field dataField = InMemoryStorage.class.getDeclaredField("data");
+        dataField.setAccessible(true);
+        Map<?, ?> entries = (Map<?, ?>) dataField.get(storage);
+        StoredEntry entry = assertInstanceOf(StoredEntry.class, entries.get(key));
+        ListValue list = assertInstanceOf(ListValue.class, entry.value());
+        return List.copyOf(list.values());
     }
 
     @Test

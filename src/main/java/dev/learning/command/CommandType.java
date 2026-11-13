@@ -8,7 +8,9 @@ public enum CommandType {
     EXISTS("exists"),
     TTL("ttl"),
     EXPIRE("expire"),
-    PERSIST("persist");
+    PERSIST("persist"),
+    RPUSH("rpush"),
+    LPUSH("lpush");
 
     private final String value;
 

@@ -1,6 +1,8 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
+import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.model.ListValue;
 import dev.learning.storage.model.StoredEntry;
 import dev.learning.storage.model.StringValue;
 
@@ -75,6 +77,61 @@ public class InMemoryStorage {
         });
 
         return written[0];
+    }
+
+    public long lpush(String key, List<String> values) {
+        return push(key, values, true);
+    }
+
+    public long rpush(String key, List<String> values) {
+        return push(key, values, false);
+    }
+
+
+    private long push(String key, List<String> values, boolean isLPush) {
+        if (key == null || values == null || values.isEmpty()) {
+            throw new IllegalArgumentException("Key or Value should not be null");
+        }
+
+        if (values.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("List values must not be null");
+        }
+
+        long[] result = {0};
+
+        data.compute(key, (k, oldEntry) -> {
+            if (oldEntry == null || isExpired(oldEntry, currentTimeMillis.getAsLong())) {
+                Deque<String> temp = new ArrayDeque<>();
+
+                for (String value : values) {
+                    if (isLPush) {
+                        temp.push(value);
+                    } else {
+                        temp.offer(value);
+                    }
+                }
+
+                result[0] = temp.size();
+                return new StoredEntry(new ListValue(temp), null);
+            }
+
+            if (oldEntry.value() instanceof ListValue(Deque<String> oldDeque)) {
+                for (String value : values) {
+                    if (isLPush) {
+                        oldDeque.push(value);
+                    } else {
+                        oldDeque.offer(value);
+                    }
+                }
+
+                result[0] = oldDeque.size();
+                return oldEntry;
+            }
+
+            throw new WrongTypeException();
+        });
+
+        return result[0];
     }
 
     public int del(String key) {

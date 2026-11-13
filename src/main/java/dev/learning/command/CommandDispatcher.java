@@ -1,14 +1,13 @@
 package dev.learning.command;
 
+import dev.learning.exception.WrongTypeException;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import java.util.*;
 
 public class CommandDispatcher {
     private final InMemoryStorage storage;
@@ -91,12 +90,55 @@ public class CommandDispatcher {
             case CommandType.TTL -> executeTTLCommand(elements);
             case CommandType.EXPIRE -> executeExpireCommand(elements);
             case CommandType.PERSIST -> executePersistCommand(elements);
+            case CommandType.LPUSH -> executeLPushCommand(elements);
+            case CommandType.RPUSH -> executeRPushCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeRPushCommand(List<RespValue> elements) {
+        return executePushCommand(elements, false);
+    }
+
+    private RespValue executeLPushCommand(List<RespValue> elements) {
+        return executePushCommand(elements, true);
+    }
+
+    private RespValue executePushCommand(List<RespValue> elements, boolean isLPush) {
+        String command = isLPush ? "lpush" : "rpush";
+
+        if (elements.size() < 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for " + command + " command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        List<String> input = new ArrayList<>();
+
+        for (int i = 2; i < elements.size(); ++i) {
+            Optional<String> temp = extractBulkOrSimpleString(elements.get(i));
+
+            if (temp.isEmpty()) {
+                return new RespValue.ErrorValue("ERR invalid list element");
+            }
+
+            input.add(temp.get());
+        }
+
+        try {
+            long length = isLPush ? storage.lpush(key.get(), input) : storage.rpush(key.get(), input);
+            return new RespValue.IntegerValue(length);
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
     }
 
     private RespValue executePersistCommand(List<RespValue> elements) {

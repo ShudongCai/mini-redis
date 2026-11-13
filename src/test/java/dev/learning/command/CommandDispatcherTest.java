@@ -334,6 +334,38 @@ class CommandDispatcherTest {
         assertEquals(Optional.empty(), storage.get("name"));
     }
 
+    @Test
+    void shouldReturnListLengthWhenLpushIsExecuted() {
+        assertEquals(new RespValue.IntegerValue(3), dispatch("LPUSH", "items", "A", "B", "C"));
+        assertEquals(new RespValue.IntegerValue(4), dispatch("LPUSH", "items", "D"));
+    }
+
+    @Test
+    void shouldReturnListLengthWhenRpushIsExecuted() {
+        assertEquals(new RespValue.IntegerValue(3), dispatch("RPUSH", "items", "A", "B", "C"));
+        assertEquals(new RespValue.IntegerValue(4), dispatch("RPUSH", "items", "D"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenPushingToStringValue() {
+        storage.set("items", "original");
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("LPUSH", "items", "A"));
+        assertEquals(expected, dispatch("RPUSH", "items", "B"));
+        assertBulkStringEquals("original", dispatch("GET", "items"));
+    }
+
+    @Test
+    void shouldRejectPushWhenNoValuesAreProvided() {
+        assertEquals(new RespValue.ErrorValue("ERR wrong number of arguments for lpush command"),
+                dispatch("LPUSH", "items"));
+        assertEquals(new RespValue.ErrorValue("ERR wrong number of arguments for rpush command"),
+                dispatch("RPUSH", "items"));
+        assertFalse(storage.exists("items"));
+    }
+
     private RespValue dispatch(String... arguments) {
         List<RespValue> elements = Arrays.stream(arguments)
                 .<RespValue>map(CommandDispatcherTest::bulkString)
