@@ -506,6 +506,47 @@ class CommandDispatcherTest {
         assertEquals(expected, dispatch("LRANGE", "items", "0", "-1", "extra"));
     }
 
+    @Test
+    void shouldExtractAsciiTextWhenBulkStringIsValid() {
+        storage.set(bytes("name"), bytes("Alice"));
+
+        assertEquals(new RespValue.IntegerValue(1), dispatch("EXPIRE", "name", "10"));
+        assertEquals(new RespValue.IntegerValue(10), dispatch("TTL", "name"));
+    }
+
+    @Test
+    void shouldRejectNonAsciiBytesWhenExtractingAsciiText() {
+        storage.set(bytes("name"), bytes("Alice"));
+        RespValue request = new RespValue.ArrayValue(List.of(
+                bulkString("EXPIRE"), bulkString("name"), new RespValue.BulkString(new byte[]{(byte) 0xff})));
+
+        assertEquals(new RespValue.ErrorValue("The Expire command is invalid"), dispatcher.dispatch(request));
+        assertEquals(-1L, storage.ttl(bytes("name")));
+    }
+
+    @Test
+    void shouldRejectNonAsciiSimpleStringWhenExtractingAsciiText() {
+        storage.set(bytes("name"), bytes("Alice"));
+        RespValue request = new RespValue.ArrayValue(List.of(
+                bulkString("EXPIRE"), bulkString("name"), new RespValue.SimpleString("\uFF11")));
+
+        assertEquals(new RespValue.ErrorValue("The Expire command is invalid"), dispatcher.dispatch(request));
+        assertEquals(-1L, storage.ttl(bytes("name")));
+    }
+
+    @Test
+    void shouldPreserveBinaryDataWhenExtractingRedisBytes() {
+        RespValue.BulkString key = new RespValue.BulkString(new byte[]{0, (byte) 0xff});
+        byte[] payload = {0, (byte) 0xfe, '\r', '\n'};
+        RespValue push = new RespValue.ArrayValue(List.of(
+                bulkString("RPUSH"), key, new RespValue.BulkString(payload)));
+        RespValue pop = new RespValue.ArrayValue(List.of(bulkString("LPOP"), key));
+
+        assertEquals(new RespValue.IntegerValue(1), dispatcher.dispatch(push));
+        RespValue.BulkString result = assertInstanceOf(RespValue.BulkString.class, dispatcher.dispatch(pop));
+        assertArrayEquals(payload, result.value());
+    }
+
     private RespValue dispatch(String... arguments) {
         List<RespValue> elements = Arrays.stream(arguments)
                 .<RespValue>map(CommandDispatcherTest::bulkString)
