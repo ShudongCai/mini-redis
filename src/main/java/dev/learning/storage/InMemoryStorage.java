@@ -3,15 +3,15 @@ package dev.learning.storage;
 import dev.learning.command.SetOptions;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.storage.model.ListValue;
+import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
 import dev.learning.storage.model.StringValue;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
-    private final ConcurrentHashMap<String, StoredEntry> data;
+    private final ConcurrentHashMap<RedisBytes, StoredEntry> data;
 
     private final LongSupplier currentTimeMillis;
 
@@ -24,21 +24,21 @@ public class InMemoryStorage {
         this.data = new ConcurrentHashMap<>();
     }
 
-    public Optional<String> get(String key) {
+    public Optional<RedisBytes> get(RedisBytes key) {
         StoredEntry entry = getLiveEntry(key);
 
         if (entry == null) {
             return Optional.empty();
         }
 
-        if (entry.value() instanceof StringValue(String value)) {
+        if (entry.value() instanceof StringValue(RedisBytes value)) {
             return Optional.of(value);
         }
 
         throw new WrongTypeException();
     }
 
-    public boolean set(String key, String value) {
+    public boolean set(RedisBytes key, RedisBytes value) {
         if (key == null || value == null) {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
@@ -47,7 +47,7 @@ public class InMemoryStorage {
         return true;
     }
 
-    public boolean set(String key, String value, SetOptions subOptions) {
+    public boolean set(RedisBytes key, RedisBytes value, SetOptions subOptions) {
         if (key == null || value == null || subOptions == null) {
             throw new IllegalArgumentException("Key, Value or SubOption should not be null");
         }
@@ -79,16 +79,16 @@ public class InMemoryStorage {
         return written[0];
     }
 
-    public long lpush(String key, List<String> values) {
+    public long lpush(RedisBytes key, List<RedisBytes> values) {
         return push(key, values, true);
     }
 
-    public long rpush(String key, List<String> values) {
+    public long rpush(RedisBytes key, List<RedisBytes> values) {
         return push(key, values, false);
     }
 
 
-    private long push(String key, List<String> values, boolean isLPush) {
+    private long push(RedisBytes key, List<RedisBytes> values, boolean isLPush) {
         if (key == null || values == null || values.isEmpty()) {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
@@ -101,9 +101,9 @@ public class InMemoryStorage {
 
         data.compute(key, (k, oldEntry) -> {
             if (oldEntry == null || isExpired(oldEntry, currentTimeMillis.getAsLong())) {
-                Deque<String> temp = new ArrayDeque<>();
+                Deque<RedisBytes> temp = new ArrayDeque<>();
 
-                for (String value : values) {
+                for (RedisBytes value : values) {
                     if (isLPush) {
                         temp.push(value);
                     } else {
@@ -115,8 +115,8 @@ public class InMemoryStorage {
                 return new StoredEntry(new ListValue(temp), null);
             }
 
-            if (oldEntry.value() instanceof ListValue(Deque<String> oldDeque)) {
-                for (String value : values) {
+            if (oldEntry.value() instanceof ListValue(Deque<RedisBytes> oldDeque)) {
+                for (RedisBytes value : values) {
                     if (isLPush) {
                         oldDeque.push(value);
                     } else {
@@ -134,27 +134,27 @@ public class InMemoryStorage {
         return result[0];
     }
 
-    public Optional<String> lpop(String key) {
+    public Optional<RedisBytes> lpop(RedisBytes key) {
         return pop(key, true);
     }
 
-    public Optional<String> rpop(String key) {
+    public Optional<RedisBytes> rpop(RedisBytes key) {
         return pop(key, false);
     }
 
-    private Optional<String> pop(String key, boolean isLPop) {
+    private Optional<RedisBytes> pop(RedisBytes key, boolean isLPop) {
         if (key == null) {
             throw new IllegalArgumentException("The key should not be null");
         }
 
-        String[] result = {null};
+        RedisBytes[] result = {null};
 
         data.computeIfPresent(key, (k, entry) -> {
            if (isExpired(entry, currentTimeMillis.getAsLong())) {
                return null;
            }
 
-           if (entry.value() instanceof ListValue(Deque<String> temp)) {
+           if (entry.value() instanceof ListValue(Deque<RedisBytes> temp)) {
                if (temp == null || temp.isEmpty()) {
                    return null;
                }
@@ -177,7 +177,7 @@ public class InMemoryStorage {
         return result[0] == null ? Optional.empty() : Optional.of(result[0]);
     }
 
-    public int del(String key) {
+    public int del(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -193,14 +193,14 @@ public class InMemoryStorage {
         return deleted[0] ? 1 : 0;
     }
 
-    public boolean exists(String key) {
+    public boolean exists(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
         return getLiveEntry(key) != null;
     }
 
-    public int llen(String key) {
+    public int llen(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -212,7 +212,7 @@ public class InMemoryStorage {
                 return null;
             }
 
-            if (entry.value() instanceof ListValue(Deque<String> values)) {
+            if (entry.value() instanceof ListValue(Deque<RedisBytes> values)) {
                 result[0] = values.size();
                 return entry;
             }
@@ -223,20 +223,19 @@ public class InMemoryStorage {
         return result[0];
     }
 
-    public List<String> lrange(String key, long start, long end) {
+    public List<RedisBytes> lrange(RedisBytes key, long start, long end) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
 
-        List<String> result = new ArrayList<>();
-        long[] temp = {start, end};
+        List<RedisBytes> result = new ArrayList<>();
 
         data.computeIfPresent(key, (k, entry) -> {
            if (isExpired(entry, currentTimeMillis.getAsLong())) {
                return null;
            }
 
-            if (entry.value() instanceof ListValue(Deque<String> values)) {
+            if (entry.value() instanceof ListValue(Deque<RedisBytes> values)) {
                 long size = values.size();
 
                 long from = start < 0 ? start + size : start;
@@ -251,7 +250,7 @@ public class InMemoryStorage {
 
                 long index = 0;
 
-                for (String value : values) {
+                for (RedisBytes value : values) {
                     if (index > to) {
                         break;
                     }
@@ -272,7 +271,7 @@ public class InMemoryStorage {
         return result;
     }
 
-    private StoredEntry getLiveEntry(String key) {
+    private StoredEntry getLiveEntry(RedisBytes key) {
         return data.computeIfPresent(key, (k, entry) ->
                 isExpired(entry, currentTimeMillis.getAsLong()) ? null : entry);
     }
@@ -281,7 +280,7 @@ public class InMemoryStorage {
         return entry.ex() != null && now >= entry.ex();
     }
 
-    public long ttl(String key) {
+    public long ttl(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -309,7 +308,7 @@ public class InMemoryStorage {
         return result[0];
     }
 
-    public int expire(String key, long seconds) {
+    public int expire(RedisBytes key, long seconds) {
         if (key == null) {
             throw new IllegalArgumentException("Key or value is null");
         }
@@ -340,7 +339,7 @@ public class InMemoryStorage {
         return result[0];
     }
 
-    public int persist(String key) {
+    public int persist(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("The key is null");
         }
@@ -365,7 +364,7 @@ public class InMemoryStorage {
 
     int cleanupExpiredEntries() {
         int[] cleanupEntries = {0};
-        for (String key : data.keySet()) {
+        for (RedisBytes key : data.keySet()) {
             data.computeIfPresent(key, (k, entry) -> {
                if (entry.ex() != null && entry.ex() <= currentTimeMillis.getAsLong()) {
                    cleanupEntries[0] = cleanupEntries[0] + 1;

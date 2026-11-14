@@ -3,6 +3,7 @@ package dev.learning.storage;
 import dev.learning.command.SetOptions;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.storage.model.ListValue;
+import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -10,7 +11,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,11 +40,11 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         //Assert
-        assertTrue(storage.get("name").isPresent());
-        assertEquals("Alice", storage.get("name").get());
+        assertTrue(storage.get(bytes("name")).isPresent());
+        assertEquals(bytes("Alice"), storage.get(bytes("name")).get());
     }
 
     @Test
@@ -50,12 +53,12 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice");
-        storage.set("name", "Ben");
+        storage.set(bytes("name"), bytes("Alice"));
+        storage.set(bytes("name"), bytes("Ben"));
 
         //Assert
-        assertTrue(storage.get("name").isPresent());
-        assertEquals("Ben", storage.get("name").get());
+        assertTrue(storage.get(bytes("name")).isPresent());
+        assertEquals(bytes("Ben"), storage.get(bytes("name")).get());
     }
 
     @Test
@@ -64,219 +67,219 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice And Ben");
+        storage.set(bytes("name"), bytes("Alice And Ben"));
 
         //Assert
-        assertTrue(storage.get("name").isPresent());
-        assertEquals("Alice And Ben", storage.get("name").get());
+        assertTrue(storage.get(bytes("name")).isPresent());
+        assertEquals(bytes("Alice And Ben"), storage.get(bytes("name")).get());
     }
 
     @Test
     void shouldCreateListWhenKeyDoesNotExist() throws ReflectiveOperationException {
         InMemoryStorage storage = new InMemoryStorage();
 
-        assertEquals(2L, storage.rpush("items", List.of("A", "B")));
-        assertEquals(List.of("A", "B"), readListValues(storage, "items"));
+        assertEquals(2L, storage.rpush(bytes("items"), byteList("A", "B")));
+        assertEquals(byteList("A", "B"), readListValues(storage, bytes("items")));
     }
 
     @Test
     void shouldPrependElementsWhenLpushIsCalled() throws ReflectiveOperationException {
         InMemoryStorage storage = new InMemoryStorage();
-        assertEquals(1L, storage.rpush("items", List.of("tail")));
+        assertEquals(1L, storage.rpush(bytes("items"), byteList("tail")));
 
-        assertEquals(4L, storage.lpush("items", List.of("A", "B", "C")));
-        assertEquals(List.of("C", "B", "A", "tail"), readListValues(storage, "items"));
+        assertEquals(4L, storage.lpush(bytes("items"), byteList("A", "B", "C")));
+        assertEquals(byteList("C", "B", "A", "tail"), readListValues(storage, bytes("items")));
     }
 
     @Test
     void shouldAppendElementsWhenRpushIsCalled() throws ReflectiveOperationException {
         InMemoryStorage storage = new InMemoryStorage();
 
-        assertEquals(3L, storage.rpush("items", List.of("A", "B", "C")));
-        assertEquals(List.of("A", "B", "C"), readListValues(storage, "items"));
+        assertEquals(3L, storage.rpush(bytes("items"), byteList("A", "B", "C")));
+        assertEquals(byteList("A", "B", "C"), readListValues(storage, bytes("items")));
 
-        assertEquals(4L, storage.rpush("items", List.of("D")));
-        assertEquals(List.of("A", "B", "C", "D"), readListValues(storage, "items"));
+        assertEquals(4L, storage.rpush(bytes("items"), byteList("D")));
+        assertEquals(byteList("A", "B", "C", "D"), readListValues(storage, bytes("items")));
     }
 
     @Test
     void shouldPreserveExpirationWhenPushingToExistingList() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertEquals(1L, storage.rpush("items", List.of("B")));
-        assertEquals(1, storage.expire("items", 10));
+        assertEquals(1L, storage.rpush(bytes("items"), byteList("B")));
+        assertEquals(1, storage.expire(bytes("items"), 10));
         clock.advanceMillis(4_000);
 
-        assertEquals(2L, storage.lpush("items", List.of("A")));
-        assertEquals(6L, storage.ttl("items"));
-        assertEquals(3L, storage.rpush("items", List.of("C")));
-        assertEquals(6L, storage.ttl("items"));
+        assertEquals(2L, storage.lpush(bytes("items"), byteList("A")));
+        assertEquals(6L, storage.ttl(bytes("items")));
+        assertEquals(3L, storage.rpush(bytes("items"), byteList("C")));
+        assertEquals(6L, storage.ttl(bytes("items")));
 
         clock.advanceMillis(6_000);
-        assertFalse(storage.exists("items"));
+        assertFalse(storage.exists(bytes("items")));
     }
 
     @Test
     void shouldRejectPushWhenKeyContainsStringValue() {
         InMemoryStorage storage = new InMemoryStorage();
-        assertTrue(storage.set("items", "original"));
+        assertTrue(storage.set(bytes("items"), bytes("original")));
 
-        assertThrows(WrongTypeException.class, () -> storage.lpush("items", List.of("A")));
-        assertEquals(Optional.of("original"), storage.get("items"));
-        assertThrows(WrongTypeException.class, () -> storage.rpush("items", List.of("B")));
-        assertEquals(Optional.of("original"), storage.get("items"));
+        assertThrows(WrongTypeException.class, () -> storage.lpush(bytes("items"), byteList("A")));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("items")));
+        assertThrows(WrongTypeException.class, () -> storage.rpush(bytes("items"), byteList("B")));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("items")));
     }
 
     @Test
     void shouldCreateNewListWhenPreviousValueHasExpired() throws ReflectiveOperationException {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("items", "expired string", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("items"), bytes("expired string"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(1_000);
 
-        assertEquals(3L, storage.lpush("items", List.of("A", "B", "C")));
-        assertEquals(List.of("C", "B", "A"), readListValues(storage, "items"));
-        assertEquals(-1L, storage.ttl("items"));
+        assertEquals(3L, storage.lpush(bytes("items"), byteList("A", "B", "C")));
+        assertEquals(byteList("C", "B", "A"), readListValues(storage, bytes("items")));
+        assertEquals(-1L, storage.ttl(bytes("items")));
     }
 
     @Test
     void shouldReturnFirstElementWhenLpopIsCalled() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
-        assertEquals(Optional.of("A"), storage.lpop("items"));
-        assertEquals(Optional.of("B"), storage.lpop("items"));
+        assertEquals(Optional.of(bytes("A")), storage.lpop(bytes("items")));
+        assertEquals(Optional.of(bytes("B")), storage.lpop(bytes("items")));
     }
 
     @Test
     void shouldReturnLastElementWhenRpopIsCalled() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
-        assertEquals(Optional.of("C"), storage.rpop("items"));
-        assertEquals(Optional.of("B"), storage.rpop("items"));
+        assertEquals(Optional.of(bytes("C")), storage.rpop(bytes("items")));
+        assertEquals(Optional.of(bytes("B")), storage.rpop(bytes("items")));
     }
 
     @Test
     void shouldRemoveKeyWhenLastElementIsPopped() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("left", List.of("A"));
-        storage.rpush("right", List.of("B"));
+        storage.rpush(bytes("left"), byteList("A"));
+        storage.rpush(bytes("right"), byteList("B"));
 
-        assertEquals(Optional.of("A"), storage.lpop("left"));
-        assertFalse(storage.exists("left"));
-        assertEquals(Optional.of("B"), storage.rpop("right"));
-        assertFalse(storage.exists("right"));
+        assertEquals(Optional.of(bytes("A")), storage.lpop(bytes("left")));
+        assertFalse(storage.exists(bytes("left")));
+        assertEquals(Optional.of(bytes("B")), storage.rpop(bytes("right")));
+        assertFalse(storage.exists(bytes("right")));
     }
 
     @Test
     void shouldReturnEmptyWhenPoppingMissingKey() {
         InMemoryStorage storage = new InMemoryStorage();
 
-        assertEquals(Optional.empty(), storage.lpop("missing"));
-        assertEquals(Optional.empty(), storage.rpop("missing"));
-        assertFalse(storage.exists("missing"));
+        assertEquals(Optional.empty(), storage.lpop(bytes("missing")));
+        assertEquals(Optional.empty(), storage.rpop(bytes("missing")));
+        assertFalse(storage.exists(bytes("missing")));
     }
 
     @Test
     void shouldReturnWrongTypeWhenPoppingStringValue() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
 
-        assertThrows(WrongTypeException.class, () -> storage.lpop("items"));
-        assertThrows(WrongTypeException.class, () -> storage.rpop("items"));
-        assertEquals(Optional.of("original"), storage.get("items"));
+        assertThrows(WrongTypeException.class, () -> storage.lpop(bytes("items")));
+        assertThrows(WrongTypeException.class, () -> storage.rpop(bytes("items")));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("items")));
     }
 
     @Test
     void shouldReturnCurrentListLengthWhenLlenIsCalled() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
-        assertEquals(3, storage.llen("items"));
-        assertEquals(Optional.of("A"), storage.lpop("items"));
-        assertEquals(2, storage.llen("items"));
+        assertEquals(3, storage.llen(bytes("items")));
+        assertEquals(Optional.of(bytes("A")), storage.lpop(bytes("items")));
+        assertEquals(2, storage.llen(bytes("items")));
     }
 
     @Test
     void shouldReturnZeroWhenLlenKeyDoesNotExist() {
         InMemoryStorage storage = new InMemoryStorage();
 
-        assertEquals(0, storage.llen("missing"));
+        assertEquals(0, storage.llen(bytes("missing")));
     }
 
     @Test
     void shouldReturnZeroWhenLlenKeyHasExpired() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        storage.rpush("items", List.of("A", "B"));
-        assertEquals(1, storage.expire("items", 1));
+        storage.rpush(bytes("items"), byteList("A", "B"));
+        assertEquals(1, storage.expire(bytes("items"), 1));
         clock.advanceMillis(1_000);
 
-        assertEquals(0, storage.llen("items"));
+        assertEquals(0, storage.llen(bytes("items")));
     }
 
     @Test
     void shouldRejectLlenWhenKeyContainsStringValue() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
 
-        assertThrows(WrongTypeException.class, () -> storage.llen("items"));
-        assertEquals(Optional.of("original"), storage.get("items"));
+        assertThrows(WrongTypeException.class, () -> storage.llen(bytes("items")));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("items")));
     }
 
     @Test
     void shouldReturnElementsIncludingBothLrangeEndpoints() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C", "D"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C", "D"));
 
-        assertEquals(List.of("B", "C"), storage.lrange("items", 1, 2));
-        assertEquals(List.of("A", "B", "C", "D"), storage.lrange("items", 0, 3));
+        assertEquals(byteList("B", "C"), storage.lrange(bytes("items"), 1, 2));
+        assertEquals(byteList("A", "B", "C", "D"), storage.lrange(bytes("items"), 0, 3));
     }
 
     @Test
     void shouldResolveNegativeLrangeIndexesAndClampToListBounds() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C", "D"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C", "D"));
 
-        assertEquals(List.of("B", "C"), storage.lrange("items", -3, -2));
-        assertEquals(List.of("C", "D"), storage.lrange("items", -2, -1));
-        assertEquals(List.of("A", "B", "C", "D"),
-                storage.lrange("items", Long.MIN_VALUE, Long.MAX_VALUE));
+        assertEquals(byteList("B", "C"), storage.lrange(bytes("items"), -3, -2));
+        assertEquals(byteList("C", "D"), storage.lrange(bytes("items"), -2, -1));
+        assertEquals(byteList("A", "B", "C", "D"),
+                storage.lrange(bytes("items"), Long.MIN_VALUE, Long.MAX_VALUE));
     }
 
     @Test
     void shouldReturnEmptyWhenLrangeSelectsNoElements() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
-        assertEquals(List.of(), storage.lrange("missing", 0, -1));
-        assertEquals(List.of(), storage.lrange("items", 3, 10));
-        assertEquals(List.of(), storage.lrange("items", 2, 1));
-        assertEquals(List.of(), storage.lrange("items", 0, -4));
+        assertEquals(List.of(), storage.lrange(bytes("missing"), 0, -1));
+        assertEquals(List.of(), storage.lrange(bytes("items"), 3, 10));
+        assertEquals(List.of(), storage.lrange(bytes("items"), 2, 1));
+        assertEquals(List.of(), storage.lrange(bytes("items"), 0, -4));
     }
 
     @Test
     void shouldReturnEmptyWhenLrangeKeyHasExpired() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        storage.rpush("items", List.of("A", "B"));
-        assertEquals(1, storage.expire("items", 1));
+        storage.rpush(bytes("items"), byteList("A", "B"));
+        assertEquals(1, storage.expire(bytes("items"), 1));
         clock.advanceMillis(1_000);
 
-        assertEquals(List.of(), storage.lrange("items", 0, -1));
+        assertEquals(List.of(), storage.lrange(bytes("items"), 0, -1));
     }
 
     @Test
     void shouldRejectLrangeWhenKeyContainsStringValue() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
 
-        assertThrows(WrongTypeException.class, () -> storage.lrange("items", 0, -1));
-        assertEquals(Optional.of("original"), storage.get("items"));
+        assertThrows(WrongTypeException.class, () -> storage.lrange(bytes("items"), 0, -1));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("items")));
     }
 
-    private static List<String> readListValues(InMemoryStorage storage, String key)
+    private static List<RedisBytes> readListValues(InMemoryStorage storage, RedisBytes key)
             throws ReflectiveOperationException {
         // Storage has no list read operation yet. Snapshot the deque for order assertions.
         Field dataField = InMemoryStorage.class.getDeclaredField("data");
@@ -295,80 +298,80 @@ public class InMemoryStorageTest {
         //Act
 
         //Assert
-        assertTrue(storage.get("name").isEmpty());
+        assertTrue(storage.get(bytes("name")).isEmpty());
     }
 
     @Test
     void shouldReturnValueWhenKeyHasNotExpired() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
 
         now.addAndGet(999);
 
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnEmptyWhenKeyHasExpired() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
 
         now.addAndGet(1_000);
 
-        assertEquals(Optional.empty(), storage.get("name"));
+        assertEquals(Optional.empty(), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnValueWhenKeyHasNoExpiration() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         now.addAndGet(DAYS.toMillis(1));
 
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldClearExpirationWhenExistingKeyIsOverwritten() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         now.addAndGet(500);
 
-        storage.set("name", "Ben");
+        storage.set(bytes("name"), bytes("Ben"));
         now.addAndGet(1_000);
 
-        assertEquals(Optional.of("Ben"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Ben")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnZeroWhenExpiredKeyIsDeleted() {
         AtomicLong now = new AtomicLong();
         InMemoryStorage storage = new InMemoryStorage(now::get);
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         now.addAndGet(1_000);
 
-        assertEquals(0, storage.del("name"));
+        assertEquals(0, storage.del(bytes("name")));
     }
 
     @Test
     void shouldReturnMinusTwoForMissingTtlKey() {
         InMemoryStorage storage = new StorageTestClock().newStorage();
 
-        assertEquals(-2L, storage.ttl("missing"));
+        assertEquals(-2L, storage.ttl(bytes("missing")));
     }
 
     @Test
     void shouldReturnMinusOneForPersistentTtlKey() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice"));
+        assertTrue(storage.set(bytes("name"), bytes("Alice")));
         clock.advanceMillis(DAYS.toMillis(1));
 
-        assertEquals(-1L, storage.ttl("name"));
+        assertEquals(-1L, storage.ttl(bytes("name")));
     }
 
     @ParameterizedTest(name = "{0} ms remaining returns {1}")
@@ -376,18 +379,18 @@ public class InMemoryStorageTest {
     void shouldReturnTtlForExpiringKey(long remainingMillis, long expectedSeconds) {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(10L).build()));
         clock.advanceMillis(10_000 - remainingMillis);
 
-        assertEquals(expectedSeconds, storage.ttl("name"));
+        assertEquals(expectedSeconds, storage.ttl(bytes("name")));
     }
 
     @Test
     void shouldReturnZeroWhenExpireKeyIsMissing() {
         InMemoryStorage storage = new StorageTestClock().newStorage();
 
-        assertEquals(0, storage.expire("missing", 10));
-        assertEquals(-2L, storage.ttl("missing"));
+        assertEquals(0, storage.expire(bytes("missing"), 10));
+        assertEquals(-2L, storage.ttl(bytes("missing")));
     }
 
     @ParameterizedTest(name = "EXPIRE {0} on an expired key returns zero")
@@ -395,36 +398,36 @@ public class InMemoryStorageTest {
     void shouldReturnZeroWhenExpireKeyIsAlreadyExpired(long seconds) {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(1_000);
 
-        assertEquals(0, storage.expire("name", seconds));
-        assertEquals(-2L, storage.ttl("name"));
+        assertEquals(0, storage.expire(bytes("name"), seconds));
+        assertEquals(-2L, storage.ttl(bytes("name")));
     }
 
     @Test
     void shouldSetExpirationOnPersistentKeyWithoutChangingItsValue() {
         InMemoryStorage storage = new StorageTestClock().newStorage();
-        assertTrue(storage.set("name", "Alice"));
+        assertTrue(storage.set(bytes("name"), bytes("Alice")));
 
-        assertEquals(1, storage.expire("name", 10));
-        assertEquals(10L, storage.ttl("name"));
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(1, storage.expire(bytes("name"), 10));
+        assertEquals(10L, storage.ttl(bytes("name")));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReplaceExistingExpirationRelativeToCurrentTime() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(10L).build()));
         clock.advanceMillis(4_000);
 
-        assertEquals(1, storage.expire("name", 20));
-        assertEquals(20L, storage.ttl("name"));
+        assertEquals(1, storage.expire(bytes("name"), 20));
+        assertEquals(20L, storage.ttl(bytes("name")));
         clock.advanceMillis(6_000);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
         clock.advanceMillis(14_000);
-        assertEquals(-2L, storage.ttl("name"));
+        assertEquals(-2L, storage.ttl(bytes("name")));
     }
 
     @ParameterizedTest(name = "EXPIRE {0} deletes a live key")
@@ -432,10 +435,10 @@ public class InMemoryStorageTest {
     void shouldDeleteLiveKeyWhenExpireTimeIsNonPositive(long seconds) {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(10L).build()));
 
-        assertEquals(1, storage.expire("name", seconds));
-        assertEquals(Optional.empty(), storage.get("name"));
+        assertEquals(1, storage.expire(bytes("name"), seconds));
+        assertEquals(Optional.empty(), storage.get(bytes("name")));
     }
 
     @ParameterizedTest(name = "EXPIRE {0} preserves the entry on overflow")
@@ -444,72 +447,72 @@ public class InMemoryStorageTest {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
         clock.advanceMillis(1_000);
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(10L).build()));
 
-        assertThrows(ArithmeticException.class, () -> storage.expire("name", seconds));
-        assertEquals(10L, storage.ttl("name"));
+        assertThrows(ArithmeticException.class, () -> storage.expire(bytes("name"), seconds));
+        assertEquals(10L, storage.ttl(bytes("name")));
         clock.advanceMillis(9_999);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
         clock.advanceMillis(1);
-        assertEquals(-2L, storage.ttl("name"));
+        assertEquals(-2L, storage.ttl(bytes("name")));
     }
 
     @Test
     void shouldRemoveExpirationWhenKeyHasTtl() {
         InMemoryStorage storage = new StorageTestClock().newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(10L).build()));
-        assertEquals(10L, storage.ttl("name"));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(10L).build()));
+        assertEquals(10L, storage.ttl(bytes("name")));
 
-        assertEquals(1, storage.persist("name"));
-        assertEquals(-1L, storage.ttl("name"));
+        assertEquals(1, storage.persist(bytes("name")));
+        assertEquals(-1L, storage.ttl(bytes("name")));
     }
 
     @Test
     void shouldReturnZeroWhenKeyHasNoExpiration() {
         InMemoryStorage storage = new StorageTestClock().newStorage();
-        assertTrue(storage.set("name", "Alice"));
+        assertTrue(storage.set(bytes("name"), bytes("Alice")));
 
-        assertEquals(0, storage.persist("name"));
-        assertEquals(-1L, storage.ttl("name"));
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(0, storage.persist(bytes("name")));
+        assertEquals(-1L, storage.ttl(bytes("name")));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnZeroWhenKeyHasExpired() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(1_000);
 
-        assertEquals(0, storage.persist("name"));
-        assertEquals(-2L, storage.ttl("name"));
+        assertEquals(0, storage.persist(bytes("name")));
+        assertEquals(-2L, storage.ttl(bytes("name")));
     }
 
     @Test
     void shouldPreserveValueAfterExpirationIsRemoved() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(500);
 
-        assertEquals(1, storage.persist("name"));
+        assertEquals(1, storage.persist(bytes("name")));
         clock.advanceMillis(501);
 
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnOneWhenExistingKeyIsDeleted() {
         // Arrange
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         // Act
-        int deletedCount = storage.del("name");
+        int deletedCount = storage.del(bytes("name"));
 
         // Assert
         assertEquals(1, deletedCount);
-        assertFalse(storage.exists("name"));
+        assertFalse(storage.exists(bytes("name")));
     }
 
     @Test
@@ -518,8 +521,8 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice");
-        int value = storage.del("hello");
+        storage.set(bytes("name"), bytes("Alice"));
+        int value = storage.del(bytes("hello"));
 
         //Assert
         assertEquals(0, value);
@@ -531,8 +534,8 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice");
-        boolean value = storage.exists("name");
+        storage.set(bytes("name"), bytes("Alice"));
+        boolean value = storage.exists(bytes("name"));
 
         //Assert
         assertTrue(value);
@@ -544,8 +547,8 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         //Act
-        storage.set("name", "Alice");
-        boolean value = storage.exists("hello");
+        storage.set(bytes("name"), bytes("Alice"));
+        boolean value = storage.exists(bytes("hello"));
 
         //Assert
         assertFalse(value);
@@ -557,100 +560,100 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
 
         // Act
-        storage.set("name", "");
+        storage.set(bytes("name"), bytes(""));
 
         // Assert
-        assertEquals(Optional.of(""), storage.get("name"));
+        assertEquals(Optional.of(bytes("")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldSetValueWhenKeyDoesNotExistWithNx() {
         InMemoryStorage storage = new InMemoryStorage();
 
-        boolean written = storage.set("name", "Alice", SetOptions.builder().nx().build());
+        boolean written = storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().nx().build());
 
         assertTrue(written);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldNotOverwriteValueWhenKeyExistsWithNx() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
-        boolean written = storage.set("name", "Bob", SetOptions.builder().nx().build());
+        boolean written = storage.set(bytes("name"), bytes("Bob"), SetOptions.builder().nx().build());
 
         assertFalse(written);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldOverwriteValueWhenKeyExistsWithXx() {
         InMemoryStorage storage = new InMemoryStorage();
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
-        boolean written = storage.set("name", "Bob", SetOptions.builder().xx().build());
+        boolean written = storage.set(bytes("name"), bytes("Bob"), SetOptions.builder().xx().build());
 
         assertTrue(written);
-        assertEquals(Optional.of("Bob"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Bob")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldNotSetValueWhenKeyDoesNotExistWithXx() {
         InMemoryStorage storage = new InMemoryStorage();
 
-        boolean written = storage.set("name", "Alice", SetOptions.builder().xx().build());
+        boolean written = storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().xx().build());
 
         assertFalse(written);
-        assertEquals(Optional.empty(), storage.get("name"));
+        assertEquals(Optional.empty(), storage.get(bytes("name")));
     }
 
     @Test
     void shouldSetValueWhenKeyHasExpiredWithNx() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(1_000);
 
-        boolean written = storage.set("name", "Bob", SetOptions.builder().nx().build());
+        boolean written = storage.set(bytes("name"), bytes("Bob"), SetOptions.builder().nx().build());
 
         assertTrue(written);
-        assertEquals(Optional.of("Bob"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Bob")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldNotSetValueWhenKeyHasExpiredWithXx() {
         StorageTestClock clock = new StorageTestClock();
         InMemoryStorage storage = clock.newStorage();
-        assertTrue(storage.set("name", "Alice", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("name"), bytes("Alice"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.advanceMillis(1_000);
 
-        boolean written = storage.set("name", "Bob", SetOptions.builder().xx().build());
+        boolean written = storage.set(bytes("name"), bytes("Bob"), SetOptions.builder().xx().build());
 
         assertFalse(written);
-        assertEquals(Optional.empty(), storage.get("name"));
+        assertEquals(Optional.empty(), storage.get(bytes("name")));
     }
 
     @Test
     void shouldNotMissKeyWhenGetOverlapsOverwriteAtExpiration() throws Exception {
-        assertReadSurvivesOverwrite(storage -> storage.get("key").isPresent());
+        assertReadSurvivesOverwrite(storage -> storage.get(bytes("key")).isPresent());
     }
 
     @Test
     void shouldNotMissKeyWhenExistsOverlapsOverwriteAtExpiration() throws Exception {
-        assertReadSurvivesOverwrite(storage -> storage.exists("key"));
+        assertReadSurvivesOverwrite(storage -> storage.exists(bytes("key")));
     }
 
     @Test
     void shouldStartSetExpirationAfterWaitingForConcurrentDelete() throws Exception {
         PausedClock clock = new PausedClock();
         InMemoryStorage storage = new InMemoryStorage(clock);
-        assertTrue(storage.set("key", "old", SetOptions.builder().ttlSeconds(10L).build()));
+        assertTrue(storage.set(bytes("key"), bytes("old"), SetOptions.builder().ttlSeconds(10L).build()));
 
-        FutureTask<Integer> delete = new FutureTask<>(() -> storage.del("key"));
+        FutureTask<Integer> delete = new FutureTask<>(() -> storage.del(bytes("key")));
         clock.pauseOn(delete);
         FutureTask<Boolean> write = new FutureTask<>(
-                () -> storage.set("key", "new", SetOptions.builder().nx().ttlSeconds(1L).build()));
+                () -> storage.set(bytes("key"), bytes("new"), SetOptions.builder().nx().ttlSeconds(1L).build()));
         try {
             clock.awaitPause();
             Thread writer = Thread.ofPlatform().daemon().start(write);
@@ -664,21 +667,21 @@ public class InMemoryStorageTest {
         assertEquals(1, delete.get(5, SECONDS));
         assertTrue(write.get(5, SECONDS));
         clock.now.set(1_999);
-        assertEquals(Optional.of("new"), storage.get("key"));
+        assertEquals(Optional.of(bytes("new")), storage.get(bytes("key")));
         clock.now.set(2_000);
-        assertEquals(Optional.empty(), storage.get("key"));
+        assertEquals(Optional.empty(), storage.get(bytes("key")));
     }
 
     private static void assertReadSurvivesOverwrite(Function<InMemoryStorage, Boolean> readKey)
             throws Exception {
         PausedClock clock = new PausedClock();
         InMemoryStorage storage = new InMemoryStorage(clock);
-        assertTrue(storage.set("key", "old", SetOptions.builder().ttlSeconds(1L).build()));
+        assertTrue(storage.set(bytes("key"), bytes("old"), SetOptions.builder().ttlSeconds(1L).build()));
         clock.now.set(999);
 
         FutureTask<Boolean> read = new FutureTask<>(() -> readKey.apply(storage));
         clock.pauseOn(read);
-        FutureTask<Boolean> overwrite = new FutureTask<>(() -> storage.set("key", "new"));
+        FutureTask<Boolean> overwrite = new FutureTask<>(() -> storage.set(bytes("key"), bytes("new")));
         try {
             clock.awaitPause();
             Thread writer = Thread.ofPlatform().daemon().start(overwrite);
@@ -694,7 +697,7 @@ public class InMemoryStorageTest {
         assertTrue(read.get(5, SECONDS), "The key was live throughout the read");
         assertTrue(overwrite.get(5, SECONDS));
         clock.now.set(1_000);
-        assertEquals(Optional.of("new"), storage.get("key"));
+        assertEquals(Optional.of(bytes("new")), storage.get(bytes("key")));
     }
 
     private static void awaitBlockedOrDone(Thread thread, FutureTask<?> task) throws InterruptedException {
@@ -742,8 +745,8 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
         int workers = 8;
         int elementsPerWorker = 64;
-        List<String> expected = IntStream.range(0, workers * elementsPerWorker)
-                .mapToObj(Integer::toString)
+        List<RedisBytes> expected = IntStream.range(0, workers * elementsPerWorker)
+                .mapToObj(index -> bytes(Integer.toString(index)))
                 .toList();
         CyclicBarrier start = new CyclicBarrier(workers);
         List<Future<Void>> pushes = new ArrayList<>();
@@ -755,11 +758,11 @@ public class InMemoryStorageTest {
                 boolean pushLeft = worker % 2 == 0;
                 pushes.add(executor.submit(() -> {
                     start.await(5, SECONDS);
-                    for (String value : expected.subList(first, first + elementsPerWorker)) {
+                    for (RedisBytes value : expected.subList(first, first + elementsPerWorker)) {
                         if (pushLeft) {
-                            storage.lpush("items", List.of(value));
+                            storage.lpush(bytes("items"), List.of(value));
                         } else {
-                            storage.rpush("items", List.of(value));
+                            storage.rpush(bytes("items"), List.of(value));
                         }
                     }
                     return null;
@@ -772,7 +775,7 @@ public class InMemoryStorageTest {
             executor.shutdownNow();
         }
 
-        List<String> actual = storage.lrange("items", 0, -1);
+        List<RedisBytes> actual = storage.lrange(bytes("items"), 0, -1);
         assertEquals(expected.size(), actual.size());
         assertEquals(new HashSet<>(expected), new HashSet<>(actual));
     }
@@ -782,13 +785,13 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
         int workers = 8;
         int popsPerWorker = 64;
-        List<String> expected = IntStream.range(0, workers * popsPerWorker)
-                .mapToObj(Integer::toString)
+        List<RedisBytes> expected = IntStream.range(0, workers * popsPerWorker)
+                .mapToObj(index -> bytes(Integer.toString(index)))
                 .toList();
-        storage.rpush("items", expected);
+        storage.rpush(bytes("items"), expected);
         CyclicBarrier start = new CyclicBarrier(workers);
-        List<Future<List<String>>> pops = new ArrayList<>();
-        List<String> popped = new ArrayList<>();
+        List<Future<List<RedisBytes>>> pops = new ArrayList<>();
+        List<RedisBytes> popped = new ArrayList<>();
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
         try {
@@ -796,15 +799,15 @@ public class InMemoryStorageTest {
                 boolean popLeft = worker % 2 == 0;
                 pops.add(executor.submit(() -> {
                     start.await(5, SECONDS);
-                    List<String> values = new ArrayList<>();
+                    List<RedisBytes> values = new ArrayList<>();
                     for (int attempt = 0; attempt < popsPerWorker; attempt++) {
-                        Optional<String> value = popLeft ? storage.lpop("items") : storage.rpop("items");
+                        Optional<RedisBytes> value = popLeft ? storage.lpop(bytes("items")) : storage.rpop(bytes("items"));
                         value.ifPresent(values::add);
                     }
                     return values;
                 }));
             }
-            for (Future<List<String>> pop : pops) {
+            for (Future<List<RedisBytes>> pop : pops) {
                 popped.addAll(pop.get(10, SECONDS));
             }
         } finally {
@@ -813,7 +816,7 @@ public class InMemoryStorageTest {
 
         assertEquals(expected.size(), popped.size());
         assertEquals(new HashSet<>(expected), new HashSet<>(popped));
-        assertFalse(storage.exists("items"));
+        assertFalse(storage.exists(bytes("items")));
     }
 
     @Test
@@ -821,10 +824,10 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
         int rounds = 128;
         int batchSize = 8;
-        List<String> expected = IntStream.range(0, (rounds + 1) * batchSize)
-                .mapToObj(Integer::toString)
+        List<RedisBytes> expected = IntStream.range(0, (rounds + 1) * batchSize)
+                .mapToObj(index -> bytes(Integer.toString(index)))
                 .toList();
-        storage.rpush("items", expected.subList(0, batchSize));
+        storage.rpush(bytes("items"), expected.subList(0, batchSize));
         CyclicBarrier startRound = new CyclicBarrier(2);
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -833,7 +836,7 @@ public class InMemoryStorageTest {
                 for (int round = 1; round <= rounds; round++) {
                     int first = round * batchSize;
                     startRound.await(5, SECONDS);
-                    storage.rpush("items", expected.subList(first, first + batchSize));
+                    storage.rpush(bytes("items"), expected.subList(first, first + batchSize));
                 }
                 return null;
             });
@@ -842,7 +845,7 @@ public class InMemoryStorageTest {
                     int beforeSize = round * batchSize;
                     int afterSize = beforeSize + batchSize;
                     startRound.await(5, SECONDS);
-                    List<String> snapshot = storage.lrange("items", 0, -1);
+                    List<RedisBytes> snapshot = storage.lrange(bytes("items"), 0, -1);
 
                     // The next batch waits at the barrier until this snapshot is checked.
                     assertTrue(snapshot.size() == beforeSize || snapshot.size() == afterSize,
@@ -858,7 +861,7 @@ public class InMemoryStorageTest {
             executor.shutdownNow();
         }
 
-        assertEquals(expected, storage.lrange("items", 0, -1));
+        assertEquals(expected, storage.lrange(bytes("items"), 0, -1));
     }
 
     @Test
@@ -876,7 +879,7 @@ public class InMemoryStorageTest {
                 writes.add(executor.submit(() -> {
                     start.await(10, SECONDS);
                     for (int key = firstKey; key < firstKey + keysPerWorker; key++) {
-                        storage.set("key-" + key, "value-" + key);
+                        storage.set(bytes("key-" + key), bytes("value-" + key));
                     }
                     return null;
                 }));
@@ -889,7 +892,7 @@ public class InMemoryStorageTest {
         }
 
         for (int key = 0; key < workers * keysPerWorker; key++) {
-            assertEquals(Optional.of("value-" + key), storage.get("key-" + key), "key-" + key);
+            assertEquals(Optional.of(bytes("value-" + key)), storage.get(bytes("key-" + key)), "key-" + key);
         }
     }
 
@@ -898,7 +901,7 @@ public class InMemoryStorageTest {
         InMemoryStorage storage = new InMemoryStorage();
         int rounds = 2_000;
         for (int round = 0; round < rounds; round++) {
-            storage.set("key-" + round, "value");
+            storage.set(bytes("key-" + round), bytes("value"));
         }
         CyclicBarrier startRound = new CyclicBarrier(2);
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -906,17 +909,17 @@ public class InMemoryStorageTest {
         try {
             Future<Void> reads = executor.submit(() -> {
                 for (int round = 0; round < rounds; round++) {
-                    String key = "key-" + round;
+                    RedisBytes key = bytes("key-" + round);
                     startRound.await(10, SECONDS);
-                    storage.get(key).ifPresent(value -> assertEquals("value", value));
+                    storage.get(key).ifPresent(value -> assertEquals(bytes("value"), value));
                 }
                 return null;
             });
             Future<Void> deletes = executor.submit(() -> {
                 for (int round = 0; round < rounds; round++) {
-                    String key = "key-" + round;
+                    RedisBytes key = bytes("key-" + round);
                     startRound.await(10, SECONDS);
-                    assertEquals(1, storage.del(key), key);
+                    assertEquals(1, storage.del(key), "key-" + round);
                 }
                 return null;
             });
@@ -926,5 +929,13 @@ public class InMemoryStorageTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private static RedisBytes bytes(String value) {
+        return new RedisBytes(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static List<RedisBytes> byteList(String... values) {
+        return Arrays.stream(values).map(InMemoryStorageTest::bytes).toList();
     }
 }

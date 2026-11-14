@@ -3,6 +3,7 @@ package dev.learning.command;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 import dev.learning.storage.StorageTestClock;
+import dev.learning.storage.model.RedisBytes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -38,7 +39,7 @@ class CommandDispatcherTest {
         RespValue result = dispatch("SET", "name", "Alice");
 
         assertEquals(new RespValue.SimpleString("OK"), result);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
@@ -48,19 +49,19 @@ class CommandDispatcherTest {
         RespValue result = dispatch("SET", "name", "Bob");
 
         assertEquals(new RespValue.SimpleString("OK"), result);
-        assertEquals(Optional.of("Bob"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Bob")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldReturnValueWhenGetIsExecuted() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         assertBulkStringEquals("Alice", dispatch("GET", "name"));
     }
 
     @Test
     void shouldReturnNullBulkStringWhenKeyDoesNotExist() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         RespValue result = dispatch("GET", "missing");
 
@@ -164,36 +165,36 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnOneWhenKeyExists() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         assertEquals(new RespValue.IntegerValue(1), dispatch("EXISTS", "name"));
     }
 
     @Test
     void shouldReturnZeroWhenKeyDoesNotExist() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         assertEquals(new RespValue.IntegerValue(0), dispatch("EXISTS", "missing"));
     }
 
     @Test
     void shouldReturnOneWhenExistingKeyIsDeleted() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         RespValue result = dispatch("DEL", "name");
 
         assertEquals(new RespValue.IntegerValue(1), result);
-        assertFalse(storage.exists("name"));
+        assertFalse(storage.exists(bytes("name")));
     }
 
     @Test
     void shouldReturnZeroWhenNonExistingKeyIsDeleted() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         RespValue result = dispatch("DEL", "missing");
 
         assertEquals(new RespValue.IntegerValue(0), result);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
@@ -258,27 +259,27 @@ class CommandDispatcherTest {
         RespValue valid = dispatch("SET", "name", "Alice");
 
         assertEquals(new RespValue.SimpleString("OK"), valid);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldPreserveExistingValueWhenNxConditionFails() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         RespValue result = dispatch("SET", "name", "Bob", "NX");
 
         assertEquals(new RespValue.BulkString(null), result);
-        assertEquals(Optional.of("Alice"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Alice")), storage.get(bytes("name")));
     }
 
     @Test
     void shouldOverwriteExistingValueWhenXxConditionSucceeds() {
-        storage.set("name", "Alice");
+        storage.set(bytes("name"), bytes("Alice"));
 
         RespValue result = dispatch("SET", "name", "Bob", "XX");
 
         assertEquals(new RespValue.SimpleString("OK"), result);
-        assertEquals(Optional.of("Bob"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Bob")), storage.get(bytes("name")));
     }
 
     @Test
@@ -289,33 +290,38 @@ class CommandDispatcherTest {
         RespValue result = dispatch("SET", "name", "Bob", "NX");
 
         assertEquals(new RespValue.SimpleString("OK"), result);
-        assertEquals(Optional.of("Bob"), storage.get("name"));
+        assertEquals(Optional.of(bytes("Bob")), storage.get(bytes("name")));
     }
 
     @Test
-    void shouldRejectMalformedUtf8KeysWithoutAccessingReplacementCharacterKey() {
-        storage.set("\uFFFD", "original");
-        RespValue.BulkString malformedKey = new RespValue.BulkString(new byte[]{(byte) 0xff});
+    void shouldKeepBinaryKeysDistinctFromEachOtherAndFromUtf8ReplacementCharacter() {
+        storage.set(bytes("\uFFFD"), bytes("original"));
+        RespValue.BulkString firstKey = new RespValue.BulkString(new byte[]{(byte) 0xff});
+        RespValue.BulkString secondKey = new RespValue.BulkString(new byte[]{(byte) 0xfe});
+        RespValue.SimpleString ok = new RespValue.SimpleString("OK");
 
-        RespValue setRequest = new RespValue.ArrayValue(List.of(
-                bulkString("SET"), malformedKey, bulkString("replacement")));
-        assertEquals(new RespValue.ErrorValue("ERR invalid key"), dispatcher.dispatch(setRequest));
+        assertEquals(ok, dispatcher.dispatch(new RespValue.ArrayValue(List.of(
+                bulkString("SET"), firstKey, bulkString("first")))));
+        assertEquals(ok, dispatcher.dispatch(new RespValue.ArrayValue(List.of(
+                bulkString("SET"), secondKey, bulkString("second")))));
 
-        for (String command : List.of("GET", "EXISTS", "DEL")) {
-            RespValue request = new RespValue.ArrayValue(List.of(bulkString(command), malformedKey));
-            assertEquals(new RespValue.ErrorValue("ERR invalid key"), dispatcher.dispatch(request), command);
-        }
-        assertEquals(Optional.of("original"), storage.get("\uFFFD"));
+        assertBulkStringEquals("first", dispatcher.dispatch(new RespValue.ArrayValue(List.of(
+                bulkString("GET"), firstKey))));
+        assertBulkStringEquals("second", dispatcher.dispatch(new RespValue.ArrayValue(List.of(
+                bulkString("GET"), secondKey))));
+        assertBulkStringEquals("original", dispatch("GET", "\uFFFD"));
     }
 
     @Test
-    void shouldRejectMalformedUtf8ValueWithoutOverwritingExistingValue() {
-        storage.set("name", "original");
-        RespValue.BulkString malformedValue = new RespValue.BulkString(new byte[]{(byte) 0xc3, 0x28});
-        RespValue request = new RespValue.ArrayValue(List.of(bulkString("SET"), bulkString("name"), malformedValue));
+    void shouldReturnBinaryValueUnchangedWhenReadingAfterSet() {
+        storage.set(bytes("name"), bytes("original"));
+        byte[] payload = {(byte) 0xc3, 0x28, 0, '\r', '\n'};
+        RespValue request = new RespValue.ArrayValue(List.of(
+                bulkString("SET"), bulkString("name"), new RespValue.BulkString(payload)));
 
-        assertEquals(new RespValue.ErrorValue("ERR invalid value"), dispatcher.dispatch(request));
-        assertEquals(Optional.of("original"), storage.get("name"));
+        assertEquals(new RespValue.SimpleString("OK"), dispatcher.dispatch(request));
+        RespValue.BulkString result = assertInstanceOf(RespValue.BulkString.class, dispatch("GET", "name"));
+        assertArrayEquals(payload, result.value());
     }
 
     @Test
@@ -329,9 +335,9 @@ class CommandDispatcherTest {
         assertInstanceOf(RespValue.ErrorValue.class, dispatch("SET", "name", "changed", "EX", "9223372036854775"));
 
         clock.advanceMillis(999);
-        assertEquals(Optional.of("original"), storage.get("name"));
+        assertEquals(Optional.of(bytes("original")), storage.get(bytes("name")));
         clock.advanceMillis(1);
-        assertEquals(Optional.empty(), storage.get("name"));
+        assertEquals(Optional.empty(), storage.get(bytes("name")));
     }
 
     @Test
@@ -348,7 +354,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnWrongTypeWhenPushingToStringValue() {
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
         RespValue.ErrorValue expected = new RespValue.ErrorValue(
                 "WRONGTYPE Operation against a key holding the wrong kind of value");
 
@@ -363,12 +369,12 @@ class CommandDispatcherTest {
                 dispatch("LPUSH", "items"));
         assertEquals(new RespValue.ErrorValue("ERR wrong number of arguments for rpush command"),
                 dispatch("RPUSH", "items"));
-        assertFalse(storage.exists("items"));
+        assertFalse(storage.exists(bytes("items")));
     }
 
     @Test
     void shouldReturnFirstElementWhenLpopIsCalled() {
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
         assertBulkStringEquals("A", dispatch("LPOP", "items"));
         assertBulkStringEquals("B", dispatch("LPOP", "items"));
@@ -376,7 +382,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnLastElementWhenRpopIsCalled() {
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
         assertBulkStringEquals("C", dispatch("RPOP", "items"));
         assertBulkStringEquals("B", dispatch("RPOP", "items"));
@@ -384,8 +390,8 @@ class CommandDispatcherTest {
 
     @Test
     void shouldRemoveKeyWhenLastElementIsPopped() {
-        storage.rpush("left", List.of("A"));
-        storage.rpush("right", List.of("B"));
+        storage.rpush(bytes("left"), byteList("A"));
+        storage.rpush(bytes("right"), byteList("B"));
 
         assertBulkStringEquals("A", dispatch("LPOP", "left"));
         assertEquals(new RespValue.IntegerValue(0), dispatch("EXISTS", "left"));
@@ -402,7 +408,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnWrongTypeWhenPoppingStringValue() {
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
         RespValue.ErrorValue expected = new RespValue.ErrorValue(
                 "WRONGTYPE Operation against a key holding the wrong kind of value");
 
@@ -413,7 +419,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnListLengthWhenLlenIsExecuted() {
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
 
         assertEquals(new RespValue.IntegerValue(3), dispatch("LLEN", "items"));
     }
@@ -425,8 +431,8 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnZeroWhenLlenKeyHasExpired() {
-        storage.rpush("items", List.of("A"));
-        assertEquals(1, storage.expire("items", 1));
+        storage.rpush(bytes("items"), byteList("A"));
+        assertEquals(1, storage.expire(bytes("items"), 1));
         clock.advanceMillis(1_000);
 
         assertEquals(new RespValue.IntegerValue(0), dispatch("LLEN", "items"));
@@ -434,7 +440,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnWrongTypeWhenLlenKeyContainsStringValue() {
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
         RespValue.ErrorValue expected = new RespValue.ErrorValue(
                 "WRONGTYPE Operation against a key holding the wrong kind of value");
 
@@ -453,7 +459,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnBulkStringsInOrderForLrangeWithNegativeEndIndex() {
-        storage.rpush("items", List.of("A", "B", "\u4E2D"));
+        storage.rpush(bytes("items"), byteList("A", "B", "\u4E2D"));
 
         RespValue.ArrayValue result = assertInstanceOf(
                 RespValue.ArrayValue.class, dispatch("LRANGE", "items", "1", "-1"));
@@ -465,7 +471,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnEmptyArrayWhenLrangeSelectsNoElements() {
-        storage.rpush("items", List.of("A", "B", "C"));
+        storage.rpush(bytes("items"), byteList("A", "B", "C"));
         RespValue.ArrayValue empty = new RespValue.ArrayValue(List.of());
 
         assertEquals(empty, dispatch("LRANGE", "missing", "0", "-1"));
@@ -474,7 +480,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldReturnWrongTypeWhenLrangeKeyContainsStringValue() {
-        storage.set("items", "original");
+        storage.set(bytes("items"), bytes("original"));
         RespValue.ErrorValue expected = new RespValue.ErrorValue(
                 "WRONGTYPE Operation against a key holding the wrong kind of value");
 
@@ -484,7 +490,7 @@ class CommandDispatcherTest {
 
     @Test
     void shouldRejectLrangeWithInvalidIndexes() {
-        storage.rpush("items", List.of("A"));
+        storage.rpush(bytes("items"), byteList("A"));
         RespValue.ErrorValue expected = new RespValue.ErrorValue("ERR value is not an integer or out of range");
 
         assertEquals(expected, dispatch("LRANGE", "items", "not-an-integer", "0"));
@@ -514,5 +520,13 @@ class CommandDispatcherTest {
     private static void assertBulkStringEquals(String expected, RespValue result) {
         RespValue.BulkString value = assertInstanceOf(RespValue.BulkString.class, result);
         assertArrayEquals(expected.getBytes(StandardCharsets.UTF_8), value.value());
+    }
+
+    private static RedisBytes bytes(String value) {
+        return new RedisBytes(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static List<RedisBytes> byteList(String... values) {
+        return Arrays.stream(values).map(CommandDispatcherTest::bytes).toList();
     }
 }

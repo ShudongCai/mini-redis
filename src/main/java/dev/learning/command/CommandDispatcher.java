@@ -3,6 +3,7 @@ package dev.learning.command;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
+import dev.learning.storage.model.RedisBytes;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -48,19 +49,15 @@ public class CommandDispatcher {
         throw new IllegalArgumentException("Invalid command");
     }
 
-    private Optional<String> extractBulkOrSimpleString(RespValue request) {
+    private Optional<RedisBytes> extractBulkOrSimpleString(RespValue request) {
         if (request instanceof RespValue.BulkString(byte[] value)
                 && value != null) {
-            try {
-                return Optional.of(StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(value)).toString());
-            } catch (CharacterCodingException e) {
-                return Optional.empty();
-            }
+            return Optional.of(new RedisBytes(value));
         }
 
         if (request instanceof RespValue.SimpleString(String value)
                 && value != null) {
-            return Optional.of(value);
+            return Optional.of(new RedisBytes(value.getBytes(StandardCharsets.UTF_8)));
         }
 
         return Optional.empty();
@@ -109,22 +106,22 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'lrange' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
-        Optional<String> start = extractBulkOrSimpleString(elements.get(2));
-        Optional<String> end = extractBulkOrSimpleString(elements.get(3));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> start = extractBulkOrSimpleString(elements.get(2));
+        Optional<RedisBytes> end = extractBulkOrSimpleString(elements.get(3));
 
         if (key.isEmpty() || start.isEmpty() || end.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid argument");
         }
 
         try {
-            long startL = Long.parseLong(start.get());
-            long endL = Long.parseLong(end.get());
-            List<String> temp = storage.lrange(key.get(), startL, endL);
+            long startL = Long.parseLong(new String(start.get().getBytes()));
+            long endL = Long.parseLong(new String(end.get().getBytes()));
+            List<RedisBytes> temp = storage.lrange(key.get(), startL, endL);
             List<RespValue> result = new ArrayList<>();
 
-            for (String t : temp) {
-                result.add(new RespValue.BulkString(t.getBytes(StandardCharsets.UTF_8)));
+            for (RedisBytes t : temp) {
+                result.add(new RespValue.BulkString(t.getBytes()));
             }
 
             return new RespValue.ArrayValue(result);
@@ -141,7 +138,7 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'llen' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key argument");
@@ -169,15 +166,15 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for '" + command + "' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key argument");
         }
 
         try {
-            Optional<String> value = isLPop ? storage.lpop(key.get()) : storage.rpop(key.get());
-            return value.map(s -> new RespValue.BulkString(s.getBytes(StandardCharsets.UTF_8)))
+            Optional<RedisBytes> value = isLPop ? storage.lpop(key.get()) : storage.rpop(key.get());
+            return value.map(s -> new RespValue.BulkString(s.getBytes()))
                     .orElseGet(() -> new RespValue.BulkString(null));
         } catch (WrongTypeException e) {
             return new RespValue.ErrorValue(e.getMessage());
@@ -199,16 +196,16 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for " + command + " command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key argument");
         }
 
-        List<String> input = new ArrayList<>();
+        List<RedisBytes> input = new ArrayList<>();
 
         for (int i = 2; i < elements.size(); ++i) {
-            Optional<String> temp = extractBulkOrSimpleString(elements.get(i));
+            Optional<RedisBytes> temp = extractBulkOrSimpleString(elements.get(i));
 
             if (temp.isEmpty()) {
                 return new RespValue.ErrorValue("ERR invalid list element");
@@ -230,7 +227,7 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'persist' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("The Persist command is invalid");
@@ -245,15 +242,15 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'expire' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
-        Optional<String> sTTL = extractBulkOrSimpleString(elements.get(2));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> sTTL = extractBulkOrSimpleString(elements.get(2));
 
         if (key.isEmpty() || sTTL.isEmpty()) {
             return new RespValue.ErrorValue("The Expire command is invalid");
         }
 
         try {
-            long seconds = Long.parseLong(sTTL.get());
+            long seconds = Long.parseLong(new String(sTTL.get().getBytes(), StandardCharsets.US_ASCII));
             int result = storage.expire(key.get(), seconds);
             return new RespValue.IntegerValue(result);
         } catch (NumberFormatException | ArithmeticException e) {
@@ -268,7 +265,7 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'ttl' command");
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("The TTL command is invalid");
@@ -286,18 +283,17 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key");
         }
 
         try {
-            Optional<String> result = storage.get(key.get());
+            Optional<RedisBytes> result = storage.get(key.get());
 
-            return result.map(s -> new RespValue.BulkString(
-                    s.getBytes(StandardCharsets.UTF_8)
-            )).orElseGet(() -> new RespValue.BulkString(null));
+            return result.map(s -> new RespValue.BulkString(s.getBytes()))
+                    .orElseGet(() -> new RespValue.BulkString(null));
 
         } catch (WrongTypeException e) {
             return new RespValue.ErrorValue(e.getMessage());
@@ -312,7 +308,7 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key");
@@ -330,7 +326,7 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key");
@@ -348,8 +344,8 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
-        Optional<String> value = extractBulkOrSimpleString(elements.get(2));
+        Optional<RedisBytes> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<RedisBytes> value = extractBulkOrSimpleString(elements.get(2));
 
         if (key.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid key");
@@ -389,26 +385,26 @@ public class CommandDispatcher {
 
 
         for (int i = 3; i < elements.size(); i++) {
-            Optional<String> command = extractBulkOrSimpleString(elements.get(i));
+            Optional<RedisBytes> command = extractBulkOrSimpleString(elements.get(i));
 
             if (command.isEmpty()) {
                 return Optional.empty();
             }
 
-            switch (command.get().trim().toUpperCase(Locale.ROOT)) {
+            switch (new String(command.get().getBytes(), StandardCharsets.US_ASCII).toUpperCase(Locale.ROOT)) {
                 case "EX" -> {
                     if (i + 1 >= elements.size()) {
                         return Optional.empty();
                     }
 
-                    Optional<String> secondsText =
+                    Optional<RedisBytes> secondsText =
                             extractBulkOrSimpleString(elements.get(++i));
 
                     if (secondsText.isEmpty()) {
                         return Optional.empty();
                     }
 
-                    long seconds = Long.parseLong(secondsText.get());
+                    long seconds = Long.parseLong(new String(secondsText.get().getBytes(), StandardCharsets.US_ASCII));
                     builder.ttlSeconds(seconds);
                 }
 

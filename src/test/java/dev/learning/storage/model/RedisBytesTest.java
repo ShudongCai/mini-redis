@@ -2,6 +2,9 @@ package dev.learning.storage.model;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class RedisBytesTest {
@@ -32,6 +35,16 @@ public class RedisBytesTest {
 
         //Assert
         assertEquals(a.hashCode(), b.hashCode());
+    }
+
+    @Test
+    void shouldFindValueWhenUsingEquivalentRedisBytesAsMapKey() {
+        Map<RedisBytes, String> values = new ConcurrentHashMap<>();
+        RedisBytes storedKey = new RedisBytes(new byte[]{0, (byte) 0xff, 42});
+        RedisBytes lookupKey = new RedisBytes(new byte[]{0, (byte) 0xff, 42});
+        values.put(storedKey, "value");
+
+        assertEquals("value", values.get(lookupKey));
     }
 
     @Test
