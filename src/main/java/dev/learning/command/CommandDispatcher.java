@@ -1,14 +1,13 @@
 package dev.learning.command;
 
+import dev.learning.exception.WrongTypeException;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import java.util.*;
 
 public class CommandDispatcher {
     private final InMemoryStorage storage;
@@ -91,12 +90,139 @@ public class CommandDispatcher {
             case CommandType.TTL -> executeTTLCommand(elements);
             case CommandType.EXPIRE -> executeExpireCommand(elements);
             case CommandType.PERSIST -> executePersistCommand(elements);
+            case CommandType.LPUSH -> executeLPushCommand(elements);
+            case CommandType.RPUSH -> executeRPushCommand(elements);
+            case CommandType.RPOP -> executeRPopCommand(elements);
+            case CommandType.LPOP -> executeLPopCommand(elements);
+            case CommandType.LLEN -> executeLlenCommand(elements);
+            case CommandType.LRANGE -> executeLrangeCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeLrangeCommand(List<RespValue> elements) {
+        if (elements.size() != 4) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'lrange' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+        Optional<String> start = extractBulkOrSimpleString(elements.get(2));
+        Optional<String> end = extractBulkOrSimpleString(elements.get(3));
+
+        if (key.isEmpty() || start.isEmpty() || end.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid argument");
+        }
+
+        try {
+            long startL = Long.parseLong(start.get());
+            long endL = Long.parseLong(end.get());
+            List<String> temp = storage.lrange(key.get(), startL, endL);
+            List<RespValue> result = new ArrayList<>();
+
+            for (String t : temp) {
+                result.add(new RespValue.BulkString(t.getBytes(StandardCharsets.UTF_8)));
+            }
+
+            return new RespValue.ArrayValue(result);
+
+        } catch (NumberFormatException e) {
+            return new RespValue.ErrorValue("ERR value is not an integer or out of range");
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private RespValue executeLlenCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'llen' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        try {
+            return new RespValue.IntegerValue(storage.llen(key.get()));
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private RespValue executeRPopCommand(List<RespValue> elements) {
+        return pop(elements, false);
+    }
+
+    private RespValue executeLPopCommand(List<RespValue> elements) {
+        return pop(elements, true);
+    }
+
+    private RespValue pop(List<RespValue> elements, boolean isLPop) {
+        String command = isLPop ? "lpop" : "rpop";
+
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for '" + command + "' command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        try {
+            Optional<String> value = isLPop ? storage.lpop(key.get()) : storage.rpop(key.get());
+            return value.map(s -> new RespValue.BulkString(s.getBytes(StandardCharsets.UTF_8)))
+                    .orElseGet(() -> new RespValue.BulkString(null));
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private RespValue executeRPushCommand(List<RespValue> elements) {
+        return executePushCommand(elements, false);
+    }
+
+    private RespValue executeLPushCommand(List<RespValue> elements) {
+        return executePushCommand(elements, true);
+    }
+
+    private RespValue executePushCommand(List<RespValue> elements, boolean isLPush) {
+        String command = isLPush ? "lpush" : "rpush";
+
+        if (elements.size() < 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for " + command + " command");
+        }
+
+        Optional<String> key = extractBulkOrSimpleString(elements.get(1));
+
+        if (key.isEmpty()) {
+            return new RespValue.ErrorValue("ERR invalid key argument");
+        }
+
+        List<String> input = new ArrayList<>();
+
+        for (int i = 2; i < elements.size(); ++i) {
+            Optional<String> temp = extractBulkOrSimpleString(elements.get(i));
+
+            if (temp.isEmpty()) {
+                return new RespValue.ErrorValue("ERR invalid list element");
+            }
+
+            input.add(temp.get());
+        }
+
+        try {
+            long length = isLPush ? storage.lpush(key.get(), input) : storage.rpush(key.get(), input);
+            return new RespValue.IntegerValue(length);
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
     }
 
     private RespValue executePersistCommand(List<RespValue> elements) {
@@ -166,15 +292,17 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR invalid key");
         }
 
-        Optional<String> result = storage.get(key.get());
+        try {
+            Optional<String> result = storage.get(key.get());
 
-        if (result.isEmpty()) {
-            return new RespValue.BulkString(null);
+            return result.map(s -> new RespValue.BulkString(
+                    s.getBytes(StandardCharsets.UTF_8)
+            )).orElseGet(() -> new RespValue.BulkString(null));
+
+        } catch (WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
 
-        return new RespValue.BulkString(
-                result.get().getBytes(StandardCharsets.UTF_8)
-        );
     }
 
     private RespValue executeExistCommand(List<RespValue> elements) {

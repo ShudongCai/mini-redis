@@ -1,6 +1,8 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
+import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.model.ListValue;
 import dev.learning.storage.model.StoredEntry;
 import dev.learning.storage.model.StringValue;
 
@@ -33,7 +35,7 @@ public class InMemoryStorage {
             return Optional.of(value);
         }
 
-        throw new IllegalStateException("Wrong Redis value type");
+        throw new WrongTypeException();
     }
 
     public boolean set(String key, String value) {
@@ -77,6 +79,104 @@ public class InMemoryStorage {
         return written[0];
     }
 
+    public long lpush(String key, List<String> values) {
+        return push(key, values, true);
+    }
+
+    public long rpush(String key, List<String> values) {
+        return push(key, values, false);
+    }
+
+
+    private long push(String key, List<String> values, boolean isLPush) {
+        if (key == null || values == null || values.isEmpty()) {
+            throw new IllegalArgumentException("Key or Value should not be null");
+        }
+
+        if (values.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("List values must not be null");
+        }
+
+        long[] result = {0};
+
+        data.compute(key, (k, oldEntry) -> {
+            if (oldEntry == null || isExpired(oldEntry, currentTimeMillis.getAsLong())) {
+                Deque<String> temp = new ArrayDeque<>();
+
+                for (String value : values) {
+                    if (isLPush) {
+                        temp.push(value);
+                    } else {
+                        temp.offer(value);
+                    }
+                }
+
+                result[0] = temp.size();
+                return new StoredEntry(new ListValue(temp), null);
+            }
+
+            if (oldEntry.value() instanceof ListValue(Deque<String> oldDeque)) {
+                for (String value : values) {
+                    if (isLPush) {
+                        oldDeque.push(value);
+                    } else {
+                        oldDeque.offer(value);
+                    }
+                }
+
+                result[0] = oldDeque.size();
+                return oldEntry;
+            }
+
+            throw new WrongTypeException();
+        });
+
+        return result[0];
+    }
+
+    public Optional<String> lpop(String key) {
+        return pop(key, true);
+    }
+
+    public Optional<String> rpop(String key) {
+        return pop(key, false);
+    }
+
+    private Optional<String> pop(String key, boolean isLPop) {
+        if (key == null) {
+            throw new IllegalArgumentException("The key should not be null");
+        }
+
+        String[] result = {null};
+
+        data.computeIfPresent(key, (k, entry) -> {
+           if (isExpired(entry, currentTimeMillis.getAsLong())) {
+               return null;
+           }
+
+           if (entry.value() instanceof ListValue(Deque<String> temp)) {
+               if (temp == null || temp.isEmpty()) {
+                   return null;
+               }
+               if (isLPop) {
+                   result[0] = temp.pollFirst();
+               } else {
+                   result[0] = temp.pollLast();
+               }
+
+               if (temp.isEmpty()) {
+                    return null;
+               }
+
+               return entry;
+           }
+
+           throw new WrongTypeException();
+        });
+
+        return result[0] == null ? Optional.empty() : Optional.of(result[0]);
+    }
+
     public int del(String key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
@@ -98,6 +198,78 @@ public class InMemoryStorage {
             throw new IllegalArgumentException("Key should not be null");
         }
         return getLiveEntry(key) != null;
+    }
+
+    public int llen(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, entry) -> {
+            if (isExpired(entry, currentTimeMillis.getAsLong())) {
+                return null;
+            }
+
+            if (entry.value() instanceof ListValue(Deque<String> values)) {
+                result[0] = values.size();
+                return entry;
+            }
+
+            throw new WrongTypeException();
+        });
+
+        return result[0];
+    }
+
+    public List<String> lrange(String key, long start, long end) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key should not be null");
+        }
+
+        List<String> result = new ArrayList<>();
+        long[] temp = {start, end};
+
+        data.computeIfPresent(key, (k, entry) -> {
+           if (isExpired(entry, currentTimeMillis.getAsLong())) {
+               return null;
+           }
+
+            if (entry.value() instanceof ListValue(Deque<String> values)) {
+                long size = values.size();
+
+                long from = start < 0 ? start + size : start;
+                long to = end < 0 ? end + size : end;
+
+                from = Math.max(0, from);
+                to = Math.min(size - 1, to);
+
+                if (from > to) {
+                    return entry;
+                }
+
+                long index = 0;
+
+                for (String value : values) {
+                    if (index > to) {
+                        break;
+                    }
+
+                    if (index >= from) {
+                        result.add(value);
+                    }
+
+                    index++;
+                }
+
+                return entry;
+            }
+
+           throw new WrongTypeException();
+        });
+
+        return result;
     }
 
     private StoredEntry getLiveEntry(String key) {
