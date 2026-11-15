@@ -2,6 +2,7 @@ package dev.learning.command.handler;
 
 import dev.learning.command.CommandArguments;
 import dev.learning.command.SetOptions;
+import dev.learning.exception.InvalidElementsException;
 import dev.learning.exception.InvalidKeyException;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.protocol.RespValue;
@@ -68,7 +69,7 @@ public class StringCommandHandler {
 
             return settable ? new RespValue.SimpleString("OK")
                     : new RespValue.BulkString(null);
-        } catch (InvalidKeyException | IllegalArgumentException e) {
+        } catch (InvalidKeyException | IllegalArgumentException | InvalidElementsException e) {
             return new RespValue.ErrorValue(e.getMessage());
         } catch (ArithmeticException e) {
             return new RespValue.ErrorValue("ERR invalid SET options");

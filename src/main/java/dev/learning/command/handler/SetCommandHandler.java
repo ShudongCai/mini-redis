@@ -29,7 +29,7 @@ public class SetCommandHandler {
             RedisBytes value = CommandArguments.extractValue(elements.get(2));
 
             return new RespValue.IntegerValue(storage.sismember(key, value));
-        } catch (InvalidKeyException | WrongTypeException e) {
+        } catch (InvalidKeyException | WrongTypeException | InvalidElementsException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
     }
