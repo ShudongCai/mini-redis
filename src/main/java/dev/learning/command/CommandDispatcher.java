@@ -59,18 +59,24 @@ public class CommandDispatcher {
         return Optional.empty();
     }
 
-    private Optional<RedisBytes> extractRedisBytes(RespValue element) {
+    private RedisBytes validateAndExtractRedisBytes(RespValue element) {
+        Optional<RedisBytes> temp = Optional.empty();
+
         if (element instanceof RespValue.BulkString(byte[] value)
                 && value != null) {
-            return Optional.of(new RedisBytes(value));
+            temp = Optional.of(new RedisBytes(value));
         }
 
         if (element instanceof RespValue.SimpleString(String value)
                 && value != null) {
-            return Optional.of(new RedisBytes(value.getBytes(StandardCharsets.UTF_8)));
+            temp = Optional.of(new RedisBytes(value.getBytes(StandardCharsets.UTF_8)));
         }
 
-        return Optional.empty();
+        if (temp.isEmpty()) {
+            throw new InvalidKeyException();
+        }
+
+        return temp.get();
     }
 
     private CommandType isValidCommand(String command) {
@@ -112,6 +118,7 @@ public class CommandDispatcher {
             case CommandType.SCARD -> executeScardCommand(elements);
             case CommandType.SMEMBERS -> executeSmembersCommand(elements);
             case CommandType.SREM -> executeSremCommand(elements);
+            case CommandType.SISMEMBER -> executeSismemberCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
@@ -120,13 +127,28 @@ public class CommandDispatcher {
         };
     }
 
+    private RespValue executeSismemberCommand(List<RespValue> elements) {
+        if (elements.size() != 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'sismember' command");
+        }
+
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            RedisBytes value = validateAndExtractRedisBytes(elements.get(2));
+
+            return new RespValue.IntegerValue(storage.sismember(key, value));
+        } catch (InvalidKeyException | WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
     private RespValue executeSremCommand(List<RespValue> elements) {
         if (elements.size() < 3) {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'srem' command");
         }
 
         try {
-            RedisBytes key = validateAndReturnKey(elements);
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
             List<RedisBytes> values = decodeValues(elements);
             return new RespValue.IntegerValue(storage.srem(key, values));
 
@@ -139,13 +161,8 @@ public class CommandDispatcher {
         List<RedisBytes> values = new ArrayList<>();
 
         for (int i = 2; i < elements.size(); ++i) {
-            Optional<RedisBytes> temp = extractRedisBytes(elements.get(i));
-
-            if (temp.isEmpty()) {
-                throw new InvalidElementsException();
-            }
-
-            values.add(temp.get());
+            RedisBytes temp = validateAndExtractRedisBytes(elements.get(i));
+            values.add(temp);
         }
 
         return values;
@@ -157,7 +174,7 @@ public class CommandDispatcher {
         }
 
         try {
-            RedisBytes key = validateAndReturnKey(elements);
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
             Set<RedisBytes> values = storage.smembers(key);
             List<RespValue> result = new ArrayList<>();
 
@@ -177,7 +194,7 @@ public class CommandDispatcher {
         }
 
         try {
-            RedisBytes key = validateAndReturnKey(elements);
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
             return new RespValue.IntegerValue(storage.scard(key));
         } catch (WrongTypeException | InvalidKeyException e) {
             return new RespValue.ErrorValue(e.getMessage());
@@ -190,7 +207,7 @@ public class CommandDispatcher {
         }
 
         try {
-            RedisBytes key = validateAndReturnKey(elements);
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
             List<RedisBytes> values = decodeValues(elements);
             return new RespValue.IntegerValue(storage.sadd(key, values));
         } catch (WrongTypeException | InvalidKeyException | InvalidElementsException e) {
@@ -203,18 +220,20 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'lrange' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
+
         Optional<String> start = extractAsciiText(elements.get(2));
         Optional<String> end = extractAsciiText(elements.get(3));
 
-        if (key.isEmpty() || start.isEmpty() || end.isEmpty()) {
+        if (start.isEmpty() || end.isEmpty()) {
             return new RespValue.ErrorValue("ERR invalid argument");
         }
 
         try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+
             long startL = Long.parseLong(start.get());
             long endL = Long.parseLong(end.get());
-            List<RedisBytes> temp = storage.lrange(key.get(), startL, endL);
+            List<RedisBytes> temp = storage.lrange(key, startL, endL);
             List<RespValue> result = new ArrayList<>();
 
             for (RedisBytes t : temp) {
@@ -225,7 +244,7 @@ public class CommandDispatcher {
 
         } catch (NumberFormatException e) {
             return new RespValue.ErrorValue("ERR value is not an integer or out of range");
-        } catch (WrongTypeException e) {
+        } catch (WrongTypeException | InvalidKeyException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
     }
@@ -235,15 +254,10 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'llen' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key argument");
-        }
-
         try {
-            return new RespValue.IntegerValue(storage.llen(key.get()));
-        } catch (WrongTypeException e) {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            return new RespValue.IntegerValue(storage.llen(key));
+        } catch (InvalidKeyException | WrongTypeException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
     }
@@ -263,17 +277,12 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for '" + command + "' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key argument");
-        }
-
         try {
-            Optional<RedisBytes> value = isLPop ? storage.lpop(key.get()) : storage.rpop(key.get());
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            Optional<RedisBytes> value = isLPop ? storage.lpop(key) : storage.rpop(key);
             return value.map(s -> new RespValue.BulkString(s.getBytes()))
                     .orElseGet(() -> new RespValue.BulkString(null));
-        } catch (WrongTypeException e) {
+        } catch (InvalidKeyException | WrongTypeException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
     }
@@ -293,28 +302,13 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for " + command + " command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key argument");
-        }
-
-        List<RedisBytes> input = new ArrayList<>();
-
-        for (int i = 2; i < elements.size(); ++i) {
-            Optional<RedisBytes> temp = extractRedisBytes(elements.get(i));
-
-            if (temp.isEmpty()) {
-                return new RespValue.ErrorValue("ERR invalid list element");
-            }
-
-            input.add(temp.get());
-        }
-
         try {
-            long length = isLPush ? storage.lpush(key.get(), input) : storage.rpush(key.get(), input);
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            List<RedisBytes> input = decodeValues(elements);
+
+            long length = isLPush ? storage.lpush(key, input) : storage.rpush(key, input);
             return new RespValue.IntegerValue(length);
-        } catch (WrongTypeException e) {
+        } catch (WrongTypeException | InvalidElementsException | InvalidKeyException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
     }
@@ -324,14 +318,13 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'persist' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("The Persist command is invalid");
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            int result = storage.persist(key);
+            return new RespValue.IntegerValue(result);
+        } catch (InvalidKeyException | IllegalArgumentException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
-
-        int result = storage.persist(key.get());
-        return new RespValue.IntegerValue(result);
     }
 
     private RespValue executeExpireCommand(List<RespValue> elements) {
@@ -339,21 +332,23 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'expire' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-        Optional<String> sTTL = extractAsciiText(elements.get(2));
-
-        if (key.isEmpty() || sTTL.isEmpty()) {
-            return new RespValue.ErrorValue("The Expire command is invalid");
-        }
-
         try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            Optional<String> sTTL = extractAsciiText(elements.get(2));
+
+            if (sTTL.isEmpty()) {
+                return new RespValue.ErrorValue("The Expire command is invalid");
+            }
+
             long seconds = Long.parseLong(sTTL.get());
-            int result = storage.expire(key.get(), seconds);
+            int result = storage.expire(key, seconds);
             return new RespValue.IntegerValue(result);
         } catch (NumberFormatException | ArithmeticException e) {
             return new RespValue.ErrorValue(
                     "ERR invalid expire time"
             );
+        } catch (InvalidKeyException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
     }
 
@@ -362,15 +357,13 @@ public class CommandDispatcher {
             return new RespValue.ErrorValue("ERR wrong number of arguments for 'ttl' command");
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("The TTL command is invalid");
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            long result = storage.ttl(key);
+            return new RespValue.IntegerValue(result);
+        } catch (InvalidKeyException | IllegalArgumentException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
-
-        long result = storage.ttl(key.get());
-
-        return new RespValue.IntegerValue(result);
     }
 
     private RespValue executeGetCommand(List<RespValue> elements) {
@@ -380,19 +373,13 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key");
-        }
-
         try {
-            Optional<RedisBytes> result = storage.get(key.get());
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            Optional<RedisBytes> result = storage.get(key);
 
             return result.map(s -> new RespValue.BulkString(s.getBytes()))
                     .orElseGet(() -> new RespValue.BulkString(null));
-
-        } catch (WrongTypeException e) {
+        } catch (WrongTypeException | IllegalArgumentException | InvalidKeyException e) {
             return new RespValue.ErrorValue(e.getMessage());
         }
 
@@ -405,15 +392,14 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            boolean result = storage.exists(key);
 
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key");
+            return new RespValue.IntegerValue(result ? 1 : 0);
+        } catch (InvalidKeyException | IllegalArgumentException e) {
+            return new RespValue.ErrorValue(e.getMessage());
         }
-
-        boolean result = storage.exists(key.get());
-
-        return new RespValue.IntegerValue(result ? 1 : 0);
     }
 
     private RespValue executeDelCommand(List<RespValue> elements) {
@@ -423,15 +409,15 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            int result = storage.del(key);
 
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key");
+            return new RespValue.IntegerValue(result);
         }
-
-        int result = storage.del(key.get());
-
-        return new RespValue.IntegerValue(result);
+        catch (InvalidKeyException | IllegalArgumentException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
     }
 
     private RespValue executeSetCommand(List<RespValue> elements) {
@@ -441,19 +427,11 @@ public class CommandDispatcher {
             );
         }
 
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-        Optional<RedisBytes> value = extractRedisBytes(elements.get(2));
+        try {
+            RedisBytes key = validateAndExtractRedisBytes(elements.get(1));
+            RedisBytes value = validateAndExtractRedisBytes(elements.get(2));
 
-        if (key.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid key");
-        }
-
-        if (value.isEmpty()) {
-            return new RespValue.ErrorValue("ERR invalid value");
-        }
-
-        if (elements.size() > 3) {
-            try {
+            if (elements.size() > 3) {
                 Optional<SetOptions> subOptions = extractSubcommand(elements);
                 if (subOptions.isEmpty()) {
                     return new RespValue.ErrorValue("Suboptions are invalid");
@@ -463,18 +441,20 @@ public class CommandDispatcher {
                     return new RespValue.ErrorValue("NX and XX cannot be set together");
                 }
 
-                boolean settable = storage.set(key.get(), value.get(), subOptions.get());
+                boolean settable = storage.set(key, value, subOptions.get());
                 return settable ? new RespValue.SimpleString("OK")
                         : new RespValue.BulkString(null);
-            } catch (IllegalArgumentException | ArithmeticException e) {
-                return new RespValue.ErrorValue("ERR invalid SET options");
             }
+
+            boolean settable = storage.set(key, value);
+
+            return settable ? new RespValue.SimpleString("OK")
+                    : new RespValue.BulkString(null);
+        } catch (InvalidKeyException | IllegalArgumentException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        } catch (ArithmeticException e) {
+            return new RespValue.ErrorValue("ERR invalid SET options");
         }
-
-        boolean settable = storage.set(key.get(), value.get());
-
-        return settable ? new RespValue.SimpleString("OK")
-                : new RespValue.BulkString(null);
     }
 
     private Optional<SetOptions> extractSubcommand(List<RespValue> elements) {
@@ -555,15 +535,5 @@ public class CommandDispatcher {
         }
 
         return new RespValue.SimpleString("PONG");
-    }
-
-    private RedisBytes validateAndReturnKey(List<RespValue> elements) {
-        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
-
-        if (key.isEmpty()) {
-            throw new InvalidKeyException();
-        }
-
-        return key.get();
     }
 }

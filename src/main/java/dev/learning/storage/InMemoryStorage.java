@@ -466,6 +466,31 @@ public class InMemoryStorage {
         return result;
     }
 
+    public int sismember(RedisBytes key, RedisBytes value) {
+        if (key == null || value == null) {
+            throw new IllegalArgumentException("Invalid SISMEMBER arguments");
+        }
+
+        int[] result = {0};
+
+        data.computeIfPresent(key, (k, oldEntry) -> {
+           if (isExpired(oldEntry, currentTimeMillis.getAsLong())) {
+               return null;
+           }
+
+           if (oldEntry.value() instanceof SetValue(Set<RedisBytes> values)) {
+               if (values.contains(value)) {
+                   result[0] = 1;
+               }
+               return oldEntry;
+           }
+
+           throw new WrongTypeException();
+        });
+
+        return result[0];
+    }
+
     int cleanupExpiredEntries() {
         int[] cleanupEntries = {0};
         for (RedisBytes key : data.keySet()) {

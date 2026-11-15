@@ -18,7 +18,8 @@ public enum CommandType {
     SADD("sadd"),
     SREM("srem"),
     SCARD("scard"),
-    SMEMBERS("smembers");
+    SMEMBERS("smembers"),
+    SISMEMBER("sismember");
 
 
     private final String value;
