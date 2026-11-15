@@ -11,8 +11,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -545,6 +547,55 @@ class CommandDispatcherTest {
         assertEquals(new RespValue.IntegerValue(1), dispatcher.dispatch(push));
         RespValue.BulkString result = assertInstanceOf(RespValue.BulkString.class, dispatcher.dispatch(pop));
         assertArrayEquals(payload, result.value());
+    }
+
+    @Test
+    void shouldAddAllMembersWhenSaddHasMultipleMembers() {
+        assertEquals(new RespValue.IntegerValue(3), dispatch("SADD", "members", "A", "B", "C", "A"));
+
+        assertEquals(Set.of(bytes("A"), bytes("B"), bytes("C")), storage.smembers(bytes("members")));
+    }
+
+    @Test
+    void shouldRemoveAllSpecifiedMembersWhenSremIsCalled() {
+        storage.sadd(bytes("members"), byteList("A", "B", "C", "D"));
+
+        assertEquals(new RespValue.IntegerValue(2), dispatch("SREM", "members", "A", "C", "missing", "A"));
+        assertEquals(Set.of(bytes("B"), bytes("D")), storage.smembers(bytes("members")));
+    }
+
+    @Test
+    void shouldReturnAllMembersWhenSmembersIsCalled() {
+        Set<RedisBytes> expected = Set.of(bytes("A"), bytes("B"), new RedisBytes(new byte[]{0, (byte) 0xff}));
+        storage.sadd(bytes("members"), List.copyOf(expected));
+
+        RespValue.ArrayValue result = assertInstanceOf(RespValue.ArrayValue.class, dispatch("SMEMBERS", "members"));
+
+        assertEquals(expected.size(), result.elements().size());
+        Set<RedisBytes> actual = new HashSet<>();
+        for (RespValue element : result.elements()) {
+            RespValue.BulkString member = assertInstanceOf(RespValue.BulkString.class, element);
+            actual.add(new RedisBytes(member.value()));
+        }
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void shouldReturnEmptyArrayWhenSetDoesNotExist() {
+        assertEquals(new RespValue.ArrayValue(List.of()), dispatch("SMEMBERS", "missing"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenKeyContainsStringValue() {
+        storage.set(bytes("members"), bytes("original"));
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("SADD", "members", "A"));
+        assertEquals(expected, dispatch("SREM", "members", "A"));
+        assertEquals(expected, dispatch("SMEMBERS", "members"));
+        assertEquals(expected, dispatch("SCARD", "members"));
+        assertBulkStringEquals("original", dispatch("GET", "members"));
     }
 
     private RespValue dispatch(String... arguments) {

@@ -1,12 +1,12 @@
 package dev.learning.command;
 
+import dev.learning.exception.InvalidElementsException;
+import dev.learning.exception.InvalidKeyException;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 import dev.learning.storage.model.RedisBytes;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -108,12 +108,94 @@ public class CommandDispatcher {
             case CommandType.LPOP -> executeLPopCommand(elements);
             case CommandType.LLEN -> executeLlenCommand(elements);
             case CommandType.LRANGE -> executeLrangeCommand(elements);
+            case CommandType.SADD -> executeSaddCommand(elements);
+            case CommandType.SCARD -> executeScardCommand(elements);
+            case CommandType.SMEMBERS -> executeSmembersCommand(elements);
+            case CommandType.SREM -> executeSremCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(
                     "ERR wrong number of arguments for 'ping' command"
             );
         };
+    }
+
+    private RespValue executeSremCommand(List<RespValue> elements) {
+        if (elements.size() < 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'srem' command");
+        }
+
+        try {
+            RedisBytes key = validateAndReturnKey(elements);
+            List<RedisBytes> values = decodeValues(elements);
+            return new RespValue.IntegerValue(storage.srem(key, values));
+
+        } catch (InvalidKeyException | WrongTypeException | InvalidElementsException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private List<RedisBytes> decodeValues(List<RespValue> elements) {
+        List<RedisBytes> values = new ArrayList<>();
+
+        for (int i = 2; i < elements.size(); ++i) {
+            Optional<RedisBytes> temp = extractRedisBytes(elements.get(i));
+
+            if (temp.isEmpty()) {
+                throw new InvalidElementsException();
+            }
+
+            values.add(temp.get());
+        }
+
+        return values;
+    }
+
+    private RespValue executeSmembersCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'smembers' command");
+        }
+
+        try {
+            RedisBytes key = validateAndReturnKey(elements);
+            Set<RedisBytes> values = storage.smembers(key);
+            List<RespValue> result = new ArrayList<>();
+
+            for (RedisBytes value : values) {
+                result.add(new RespValue.BulkString(value.getBytes()));
+            }
+
+            return new RespValue.ArrayValue(result);
+        } catch (InvalidKeyException | WrongTypeException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private RespValue executeScardCommand(List<RespValue> elements) {
+        if (elements.size() != 2) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'scard' command");
+        }
+
+        try {
+            RedisBytes key = validateAndReturnKey(elements);
+            return new RespValue.IntegerValue(storage.scard(key));
+        } catch (WrongTypeException | InvalidKeyException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
+    }
+
+    private RespValue executeSaddCommand(List<RespValue> elements) {
+        if (elements.size() < 3) {
+            return new RespValue.ErrorValue("ERR wrong number of arguments for 'sadd' command");
+        }
+
+        try {
+            RedisBytes key = validateAndReturnKey(elements);
+            List<RedisBytes> values = decodeValues(elements);
+            return new RespValue.IntegerValue(storage.sadd(key, values));
+        } catch (WrongTypeException | InvalidKeyException | InvalidElementsException e) {
+            return new RespValue.ErrorValue(e.getMessage());
+        }
     }
 
     private RespValue executeLrangeCommand(List<RespValue> elements) {
@@ -473,5 +555,15 @@ public class CommandDispatcher {
         }
 
         return new RespValue.SimpleString("PONG");
+    }
+
+    private RedisBytes validateAndReturnKey(List<RespValue> elements) {
+        Optional<RedisBytes> key = extractRedisBytes(elements.get(1));
+
+        if (key.isEmpty()) {
+            throw new InvalidKeyException();
+        }
+
+        return key.get();
     }
 }

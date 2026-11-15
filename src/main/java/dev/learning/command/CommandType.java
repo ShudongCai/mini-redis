@@ -14,7 +14,12 @@ public enum CommandType {
     RPOP("rpop"),
     LPOP("lpop"),
     LRANGE("lrange"),
-    LLEN("llen");
+    LLEN("llen"),
+    SADD("sadd"),
+    SREM("srem"),
+    SCARD("scard"),
+    SMEMBERS("smembers");
+
 
     private final String value;
 
