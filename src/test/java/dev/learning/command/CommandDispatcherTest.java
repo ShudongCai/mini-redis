@@ -11,8 +11,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -545,6 +547,120 @@ class CommandDispatcherTest {
         assertEquals(new RespValue.IntegerValue(1), dispatcher.dispatch(push));
         RespValue.BulkString result = assertInstanceOf(RespValue.BulkString.class, dispatcher.dispatch(pop));
         assertArrayEquals(payload, result.value());
+    }
+
+    @Test
+    void shouldAddAllMembersWhenSaddHasMultipleMembers() {
+        assertEquals(new RespValue.IntegerValue(3), dispatch("SADD", "members", "A", "B", "C", "A"));
+
+        assertEquals(Set.of(bytes("A"), bytes("B"), bytes("C")), storage.smembers(bytes("members")));
+    }
+
+    @Test
+    void shouldRemoveAllSpecifiedMembersWhenSremIsCalled() {
+        storage.sadd(bytes("members"), byteList("A", "B", "C", "D"));
+
+        assertEquals(new RespValue.IntegerValue(2), dispatch("SREM", "members", "A", "C", "missing", "A"));
+        assertEquals(Set.of(bytes("B"), bytes("D")), storage.smembers(bytes("members")));
+    }
+
+    @Test
+    void shouldReturnAllMembersWhenSmembersIsCalled() {
+        Set<RedisBytes> expected = Set.of(bytes("A"), bytes("B"), new RedisBytes(new byte[]{0, (byte) 0xff}));
+        storage.sadd(bytes("members"), List.copyOf(expected));
+
+        RespValue.ArrayValue result = assertInstanceOf(RespValue.ArrayValue.class, dispatch("SMEMBERS", "members"));
+
+        assertEquals(expected.size(), result.elements().size());
+        Set<RedisBytes> actual = new HashSet<>();
+        for (RespValue element : result.elements()) {
+            RespValue.BulkString member = assertInstanceOf(RespValue.BulkString.class, element);
+            actual.add(new RedisBytes(member.value()));
+        }
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void shouldReturnEmptyArrayWhenSetDoesNotExist() {
+        assertEquals(new RespValue.ArrayValue(List.of()), dispatch("SMEMBERS", "missing"));
+    }
+
+    @Test
+    void shouldReturnWrongTypeWhenKeyContainsStringValue() {
+        storage.set(bytes("members"), bytes("original"));
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+        assertEquals(expected, dispatch("SADD", "members", "A"));
+        assertEquals(expected, dispatch("SREM", "members", "A"));
+        assertEquals(expected, dispatch("SMEMBERS", "members"));
+        assertEquals(expected, dispatch("SCARD", "members"));
+        assertEquals(expected, dispatch("SISMEMBER", "members", "A"));
+        assertBulkStringEquals("original", dispatch("GET", "members"));
+    }
+
+    @Test
+    void shouldFindBinaryMemberWhenSismemberIsCalled() {
+        byte[] member = {0, (byte) 0xff};
+        storage.sadd(bytes("members"), List.of(new RedisBytes(member)));
+        RespValue request = new RespValue.ArrayValue(List.of(
+                bulkString("SISMEMBER"), bulkString("members"), new RespValue.BulkString(member)));
+
+        assertEquals(new RespValue.IntegerValue(1), dispatcher.dispatch(request));
+    }
+
+    @Test
+    void shouldReturnZeroForMissingSetOrMemberWhenSismemberIsCalled() {
+        storage.sadd(bytes("members"), byteList("A"));
+        RespValue.IntegerValue zero = new RespValue.IntegerValue(0);
+
+        assertEquals(zero, dispatch("SISMEMBER", "missing", "A"));
+        assertEquals(zero, dispatch("SISMEMBER", "members", "B"));
+    }
+
+    @Test
+    void shouldRejectSismemberWithWrongArgumentCount() {
+        RespValue.ErrorValue expected = new RespValue.ErrorValue(
+                "ERR wrong number of arguments for 'sismember' command");
+
+        assertEquals(expected, dispatch("SISMEMBER", "members"));
+        assertEquals(expected, dispatch("SISMEMBER", "members", "A", "B"));
+    }
+
+    @Test
+    void shouldRejectSismemberWithInvalidKeyOrMember() {
+        RespValue command = bulkString("SISMEMBER");
+        RespValue invalid = new RespValue.IntegerValue(42);
+
+        assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(
+                new RespValue.ArrayValue(List.of(command, invalid, bulkString("A")))));
+        assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(
+                new RespValue.ArrayValue(List.of(command, bulkString("members"), invalid))));
+    }
+
+    @Test
+    void shouldReturnErrorWhenListCommandHasInvalidKey() {
+        RespValue.ErrorValue expected = new RespValue.ErrorValue("ERR invalid key argument");
+
+        for (String command : List.of("LLEN", "LPOP", "RPOP")) {
+            RespValue request = new RespValue.ArrayValue(List.of(bulkString(command), new RespValue.IntegerValue(42)));
+            assertEquals(expected, dispatcher.dispatch(request), command);
+        }
+    }
+
+    @Test
+    void shouldLeaveSetUnchangedWhenBatchContainsInvalidMember() {
+        RedisBytes key = bytes("members");
+        Set<RedisBytes> expected = Set.of(bytes("A"), bytes("B"));
+        storage.sadd(key, List.copyOf(expected));
+        RespValue invalid = new RespValue.IntegerValue(42);
+        RespValue add = new RespValue.ArrayValue(List.of(bulkString("SADD"), bulkString("members"), bulkString("C"), invalid));
+        RespValue remove = new RespValue.ArrayValue(List.of(bulkString("SREM"), bulkString("members"), bulkString("A"), invalid));
+
+        assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(add));
+        assertEquals(expected, storage.smembers(key));
+        assertInstanceOf(RespValue.ErrorValue.class, dispatcher.dispatch(remove));
+        assertEquals(expected, storage.smembers(key));
     }
 
     private RespValue dispatch(String... arguments) {
