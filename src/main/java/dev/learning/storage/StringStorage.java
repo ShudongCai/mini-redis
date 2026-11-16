@@ -4,7 +4,7 @@ import dev.learning.command.SetOptions;
 import dev.learning.exception.WrongTypeException;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
-import dev.learning.storage.model.StringValue;
+import dev.learning.storage.model.redisValue.StringValue;
 
 import java.util.Optional;
 

@@ -2,7 +2,7 @@ package dev.learning.storage;
 
 import dev.learning.exception.WrongTypeException;
 import dev.learning.storage.model.RedisBytes;
-import dev.learning.storage.model.SetValue;
+import dev.learning.storage.model.redisValue.SetValue;
 import dev.learning.storage.model.StoredEntry;
 
 import java.util.HashSet;
