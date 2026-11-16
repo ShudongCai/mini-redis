@@ -14,9 +14,6 @@ import java.util.Map;
 import java.util.Set;
 
 public class SnapshotWriter {
-    public static final byte[] MAGIC = {'M', 'R', 'S', '1'};
-    public static final int VERSION = 1;
-
     private final DataOutputStream writer;
 
     public SnapshotWriter(OutputStream stream) {
@@ -36,8 +33,8 @@ public class SnapshotWriter {
     }
 
     private void writeHeader(int entryCount) throws IOException {
-        writer.write(MAGIC);
-        writer.writeInt(VERSION);
+        writer.write(SnapshotFormat.MAGIC);
+        writer.writeInt(SnapshotFormat.VERSION);
         writer.writeInt(entryCount);
     }
 

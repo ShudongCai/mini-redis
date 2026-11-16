@@ -4,6 +4,8 @@ import dev.learning.exception.WrongTypeException;
 import dev.learning.storage.model.redisValue.*;
 
 public class SnapshotFormat {
+    public static final byte[] MAGIC = {'M', 'R', 'S', '1'};
+    public static final int VERSION = 1;
     public static final byte TYPE_STRING = 1;
     public static final byte TYPE_LIST = 2;
     public static final byte TYPE_SET = 3;
