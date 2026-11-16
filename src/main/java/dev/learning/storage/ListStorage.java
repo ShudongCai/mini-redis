@@ -1,7 +1,7 @@
 package dev.learning.storage;
 
 import dev.learning.exception.WrongTypeException;
-import dev.learning.storage.model.ListValue;
+import dev.learning.storage.model.redisValue.ListValue;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
 

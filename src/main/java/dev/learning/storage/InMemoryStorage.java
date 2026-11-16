@@ -4,6 +4,7 @@ import dev.learning.command.SetOptions;
 import dev.learning.storage.model.RedisBytes;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.LongSupplier;
@@ -13,6 +14,7 @@ public class InMemoryStorage {
     private final ListStorage listStorage;
     private final SetStorage setStorage;
     private final KeyStorage keyStorage;
+    private final SortedSetStorage sortedSetStorage;
 
     public InMemoryStorage() {
         this(System::currentTimeMillis);
@@ -24,6 +26,7 @@ public class InMemoryStorage {
         this.listStorage = new ListStorage(context);
         this.setStorage = new SetStorage(context);
         this.keyStorage = new KeyStorage(context);
+        this.sortedSetStorage = new SortedSetStorage(context);
     }
 
     public Optional<RedisBytes> get(RedisBytes key) {
@@ -100,6 +103,22 @@ public class InMemoryStorage {
 
     public int persist(RedisBytes key) {
         return keyStorage.persist(key);
+    }
+
+    public long zadd(RedisBytes key, Map<RedisBytes, Double> values) {
+        return sortedSetStorage.zadd(key, values);
+    }
+
+    public Optional<Double> zscore(RedisBytes key, RedisBytes member) {
+        return sortedSetStorage.zscore(key, member);
+    }
+
+    public long zrem(RedisBytes key, List<RedisBytes> values) {
+        return sortedSetStorage.zrem(key, values);
+    }
+
+    public List<RedisBytes> zrange(RedisBytes key, long start, long end) {
+        return sortedSetStorage.zrange(key, start, end);
     }
 
     int cleanupExpiredEntries() {

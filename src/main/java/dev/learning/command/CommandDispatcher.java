@@ -1,9 +1,6 @@
 package dev.learning.command;
 
-import dev.learning.command.handler.KeyCommandHandler;
-import dev.learning.command.handler.ListCommandHandler;
-import dev.learning.command.handler.SetCommandHandler;
-import dev.learning.command.handler.StringCommandHandler;
+import dev.learning.command.handler.*;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
@@ -15,6 +12,7 @@ public class CommandDispatcher {
     private final ListCommandHandler listCommandHandler;
     private final KeyCommandHandler keyCommandHandler;
     private final StringCommandHandler stringCommandHandler;
+    private final SortedSetCommandHandler sortedSetCommandHandler;
 
     public CommandDispatcher(
             InMemoryStorage storage
@@ -23,6 +21,7 @@ public class CommandDispatcher {
         this.listCommandHandler = new ListCommandHandler(storage);
         this.keyCommandHandler = new KeyCommandHandler(storage);
         this.stringCommandHandler = new StringCommandHandler(storage);
+        this.sortedSetCommandHandler = new SortedSetCommandHandler(storage);
     }
 
     public RespValue dispatch(RespValue request) {
@@ -74,6 +73,10 @@ public class CommandDispatcher {
             case CommandType.SMEMBERS -> setCommandHandler.executeSmembersCommand(elements);
             case CommandType.SREM -> setCommandHandler.executeSremCommand(elements);
             case CommandType.SISMEMBER -> setCommandHandler.executeSismemberCommand(elements);
+            case CommandType.ZADD -> sortedSetCommandHandler.executeZaddCommand(elements);
+            case CommandType.ZRANGE -> sortedSetCommandHandler.executeZrangeCommand(elements);
+            case CommandType.ZREM -> sortedSetCommandHandler.executeZremCommand(elements);
+            case CommandType.ZSCORE -> sortedSetCommandHandler.executeZscoreCommand(elements);
             case PING -> elements.size() == 1
                     ? new RespValue.SimpleString("PONG")
                     : new RespValue.ErrorValue(

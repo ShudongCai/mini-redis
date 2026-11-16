@@ -19,7 +19,11 @@ public enum CommandType {
     SREM("srem"),
     SCARD("scard"),
     SMEMBERS("smembers"),
-    SISMEMBER("sismember");
+    SISMEMBER("sismember"),
+    ZADD("zadd"),
+    ZSCORE("zscore"),
+    ZREM("zrem"),
+    ZRANGE("zrange");
 
 
     private final String value;
