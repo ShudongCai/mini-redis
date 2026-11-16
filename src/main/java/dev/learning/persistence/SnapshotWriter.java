@@ -35,10 +35,11 @@ public class SnapshotWriter {
     private void writeBody(SnapshotEntry entry) throws IOException {
         byte valueType = SnapshotFormat.getValueType(entry.value());
         long expireAt = entry.expireAt() == null ? -1 : entry.expireAt();
+        byte[] keyBytes = entry.key().getBytes();
         //Key length
-        writer.writeInt(entry.key().getBytes().length);
+        writer.writeInt(keyBytes.length);
         //Key
-        writer.write(entry.key().getBytes());
+        writer.write(keyBytes);
         //value type
         writer.write(valueType);
         //expire time
