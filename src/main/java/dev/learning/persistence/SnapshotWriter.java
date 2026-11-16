@@ -1,12 +1,17 @@
 package dev.learning.persistence;
 
 import dev.learning.storage.model.RedisBytes;
+import dev.learning.storage.model.redisValue.ListValue;
+import dev.learning.storage.model.redisValue.SetValue;
+import dev.learning.storage.model.redisValue.SortedSetValue;
 import dev.learning.storage.model.redisValue.StringValue;
-
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Deque;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class SnapshotWriter {
     public static final byte[] MAGIC = {'M', 'R', 'S', '1'};
@@ -21,6 +26,10 @@ public class SnapshotWriter {
     public void write(List<SnapshotEntry> entries) {
         try {
             writeHeader(entries.size());
+            for (SnapshotEntry entry : entries) {
+                writeBody(entry);
+            }
+            writer.flush();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -55,20 +64,48 @@ public class SnapshotWriter {
 
     private void writeString(SnapshotEntry entry) throws IOException {
         if (entry.value() instanceof StringValue(RedisBytes value)) {
-            writer.writeInt(value.getBytes().length);
-            writer.write(value.getBytes());
+            writeRedisBytes(value);
         }
     }
 
-    private void writeSortedSet(SnapshotEntry entry) {
+    private void writeList(SnapshotEntry entry) throws IOException {
+        if (entry.value() instanceof ListValue(Deque<RedisBytes> values)) {
+            writer.writeInt(values.size());
 
+            for (RedisBytes value : values) {
+                writeRedisBytes(value);
+            }
+        }
     }
 
-    private void writeSet(SnapshotEntry entry) {
+    private void writeSortedSet(SnapshotEntry entry) throws IOException {
+        if (entry.value() instanceof SortedSetValue setValues) {
+            Map<RedisBytes, Double> values = setValues.score();
+            writer.writeInt(values.size());
 
+            for (Map.Entry<RedisBytes, Double> map : values.entrySet()) {
+                RedisBytes value = map.getKey();
+                double score = map.getValue();
+
+                writeRedisBytes(value);
+                writer.writeDouble(score);
+            }
+        }
     }
 
-    private void writeList(SnapshotEntry entry) {
+    private void writeSet(SnapshotEntry entry) throws IOException {
+        if (entry.value() instanceof SetValue(Set<RedisBytes> values)) {
+            writer.writeInt(values.size());
 
+            for (RedisBytes value : values) {
+                writeRedisBytes(value);
+            }
+        }
+    }
+
+    private void writeRedisBytes(RedisBytes value) throws IOException {
+        byte[] bytes = value.getBytes();
+        writer.writeInt(bytes.length);
+        writer.write(bytes);
     }
 }
