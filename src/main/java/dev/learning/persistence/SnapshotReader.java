@@ -10,6 +10,8 @@ import java.io.InputStream;
 import java.util.*;
 
 public class SnapshotReader {
+    private static final int MAX_BINARY_LENGTH = 16 * 1024 * 1024;
+
     private final DataInputStream dataInputStream;
 
     public SnapshotReader(InputStream inputStream) {
@@ -20,6 +22,9 @@ public class SnapshotReader {
         List<SnapshotEntry> snapshotData = new ArrayList<>();
         int entryCounts = readHeader();
         readEntries(entryCounts, snapshotData);
+        if (dataInputStream.read() != -1) {
+            throw new IOException("Unexpected trailing data");
+        }
         return snapshotData;
     }
 
@@ -34,25 +39,21 @@ public class SnapshotReader {
             long timestamp = dataInputStream.readLong();
             Long expireAt = timestamp == -1L ? null : timestamp;
 
-            RedisValue redisValue = null;
-
-            switch (valueType) {
-                case SnapshotFormat.TYPE_STRING -> redisValue = readTypeString();
-                case SnapshotFormat.TYPE_LIST -> redisValue = readTypeList();
-                case SnapshotFormat.TYPE_SET -> redisValue = readTypeSet();
-                case SnapshotFormat.TYPE_SORTED_SET -> redisValue = readTypeSortedSet();
-            }
-
-            if (redisValue != null) {
-                SnapshotEntry newEntry = new SnapshotEntry(
-                        keyBytes,
-                        redisValue,
-                        expireAt
+            RedisValue redisValue = switch (valueType) {
+                case SnapshotFormat.TYPE_STRING -> readTypeString();
+                case SnapshotFormat.TYPE_LIST -> readTypeList();
+                case SnapshotFormat.TYPE_SET -> readTypeSet();
+                case SnapshotFormat.TYPE_SORTED_SET -> readTypeSortedSet();
+                default -> throw new IOException(
+                        "Unknown snapshot value type: " + valueType
                 );
-                snapshotData.add(newEntry);
-            } else {
-                throw new IllegalArgumentException();
-            }
+            };
+
+            snapshotData.add(new SnapshotEntry(
+                    keyBytes,
+                    redisValue,
+                    expireAt
+            ));
         }
     }
 
@@ -67,12 +68,14 @@ public class SnapshotReader {
                     return compareResult;
                 }
         );
-        int readCounts = dataInputStream.readInt();
+        int readCounts = readCount();
 
         for (int i = 0; i < readCounts; ++i) {
             RedisBytes redisBytes = readRedisBytes();
             Double score = dataInputStream.readDouble();
-            map.put(redisBytes, score);
+            if (map.putIfAbsent(redisBytes, score) != null) {
+                throw new IOException("Duplicate sorted set member");
+            }
             set.add(new SortedSetEntry(redisBytes, score));
         }
 
@@ -81,7 +84,7 @@ public class SnapshotReader {
 
     private SetValue readTypeSet() throws IOException {
         Set<RedisBytes> setValue = new HashSet<>();
-        int readCounts = dataInputStream.readInt();
+        int readCounts = readCount();
 
         for (int i = 0; i < readCounts; ++i) {
             setValue.add(readRedisBytes());
@@ -91,7 +94,7 @@ public class SnapshotReader {
 
     private ListValue readTypeList() throws IOException {
         Deque<RedisBytes> listValue = new ArrayDeque<>();
-        int readCounts = dataInputStream.readInt();
+        int readCounts = readCount();
 
         for (int i = 0; i < readCounts; ++i) {
             listValue.offer(readRedisBytes());
@@ -114,13 +117,21 @@ public class SnapshotReader {
             throw new IOException("Unsupported snapshot version");
         }
 
-        return dataInputStream.readInt();
+        return readCount();
+    }
+
+    private int readCount() throws IOException {
+        int count = dataInputStream.readInt();
+        if (count < 0) {
+            throw new IOException("Negative element count");
+        }
+        return count;
     }
 
     private RedisBytes readRedisBytes() throws IOException {
         int length = dataInputStream.readInt();
 
-        if (length < 0) {
+        if (length < 0 || length > MAX_BINARY_LENGTH) {
             throw new IOException("Invalid RedisBytes length");
         }
 
