@@ -20,17 +20,14 @@ public class SnapshotWriter {
         this.writer = new DataOutputStream(stream);
     }
 
-    public void write(List<SnapshotEntry> entries) {
-        try {
-            writeHeader(entries.size());
-            for (SnapshotEntry entry : entries) {
-                writeBody(entry);
-            }
-            writer.flush();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+    public void write(List<SnapshotEntry> entries) throws IOException {
+        writeHeader(entries.size());
+        for (SnapshotEntry entry : entries) {
+            writeBody(entry);
         }
+        writer.flush();
     }
+
 
     private void writeHeader(int entryCount) throws IOException {
         writer.write(SnapshotFormat.MAGIC);

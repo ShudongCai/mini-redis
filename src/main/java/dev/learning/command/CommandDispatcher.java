@@ -92,7 +92,7 @@ public class CommandDispatcher {
                 case CommandType.ZRANGE -> sortedSetCommandHandler.executeZrangeCommand(elements);
                 case CommandType.ZREM -> sortedSetCommandHandler.executeZremCommand(elements);
                 case CommandType.ZSCORE -> sortedSetCommandHandler.executeZscoreCommand(elements);
-                case CommandType.SAVE -> snapshotCommandHandler.executeSaveCommand();
+                case CommandType.SAVE -> snapshotCommandHandler.executeSaveCommand(elements);
                 case PING -> elements.size() == 1
                         ? new RespValue.SimpleString("PONG")
                         : new RespValue.ErrorValue(

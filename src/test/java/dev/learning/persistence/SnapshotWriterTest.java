@@ -6,6 +6,7 @@ import dev.learning.storage.model.redisValue.StringValue;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.HexFormat;
 import java.util.List;
@@ -15,12 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 class SnapshotWriterTest {
     @Test
-    void shouldWriteVersionOneHeaderForEmptySnapshot() {
+    void shouldWriteVersionOneHeaderForEmptySnapshot() throws IOException {
         assertSnapshotBytes("4d525331" + "00000001" + "00000000", List.of());
     }
 
     @Test
-    void shouldWriteBinaryStringEntryAndExpirationUsingVersionOneLayout() {
+    void shouldWriteBinaryStringEntryAndExpirationUsingVersionOneLayout() throws IOException {
         RedisBytes key = new RedisBytes(new byte[]{0, (byte) 0xff});
         RedisBytes value = new RedisBytes(new byte[]{'\r', '\n', (byte) 0xfe});
         SnapshotEntry entry = new SnapshotEntry(key, new StringValue(value), 1_234L);
@@ -32,7 +33,7 @@ class SnapshotWriterTest {
     }
 
     @Test
-    void shouldWritePersistentListElementsInOrder() {
+    void shouldWritePersistentListElementsInOrder() throws IOException {
         ListValue value = new ListValue(new ArrayDeque<>(List.of(bytes("B"), bytes("A"), bytes("B"))));
         SnapshotEntry entry = new SnapshotEntry(bytes("q"), value, null);
 
@@ -42,7 +43,7 @@ class SnapshotWriterTest {
         assertSnapshotBytes(expected, List.of(entry));
     }
 
-    private static void assertSnapshotBytes(String expectedHex, List<SnapshotEntry> entries) {
+    private static void assertSnapshotBytes(String expectedHex, List<SnapshotEntry> entries) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
         new SnapshotWriter(output).write(entries);

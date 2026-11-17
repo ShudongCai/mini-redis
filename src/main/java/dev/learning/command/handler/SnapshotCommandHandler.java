@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 public class SnapshotCommandHandler {
@@ -25,14 +26,40 @@ public class SnapshotCommandHandler {
         this(inMemoryStorage, Path.of("data", "snapshot.bin"));
     }
 
-    public RespValue executeSaveCommand() throws IOException {
+    public RespValue executeSaveCommand(List<RespValue> elements) throws IOException {
+        if (elements.size() != 1) {
+            return new RespValue.ErrorValue(
+                    "ERR wrong number of arguments for 'save' command"
+            );
+        }
+
+        Path target = snapshotPath.toAbsolutePath();
+        Files.createDirectories(target.getParent());
+
         List<SnapshotEntry> snapshots = inMemoryStorage.exportSnapshot();
 
-        Files.createDirectories(snapshotPath.getParent());
-        try (OutputStream outputStream = Files.newOutputStream(snapshotPath)) {
-            SnapshotWriter snapshotWriter = new SnapshotWriter(outputStream);
-            snapshotWriter.write(snapshots);
+        Path temp = Files.createTempFile(
+                target.getParent(),
+                "snapshot-",
+                ".tmp"
+        );
+
+        try {
+            try (OutputStream outputStream = Files.newOutputStream(temp)) {
+                SnapshotWriter snapshotWriter = new SnapshotWriter(outputStream);
+                snapshotWriter.write(snapshots);
+            }
+
+            Files.move(
+                    temp,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        } finally {
+            Files.deleteIfExists(temp);
         }
+
         return new RespValue.SimpleString("OK");
     }
 }
