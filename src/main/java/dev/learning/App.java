@@ -25,7 +25,7 @@ public class App {
                         new MiniRedisServer(16380, decoder, encoder, dispatcher)
         ) {
             scheduler.scheduledWithFixedDelay(
-                    storage.expirationCleanupTask(),
+                    storage.expirationCleanupTask(reentrantReadWriteLock),
                     1,
                     5,
                     TimeUnit.SECONDS

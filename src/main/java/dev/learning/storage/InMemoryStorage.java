@@ -7,6 +7,8 @@ import dev.learning.storage.service.SnapshotService;
 import dev.learning.storage.valueStorage.*;
 
 import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
@@ -135,7 +137,15 @@ public class InMemoryStorage {
         return keyStorage.cleanupExpiredEntries();
     }
 
-    public Runnable expirationCleanupTask() {
-        return this::cleanupExpiredEntries;
+    public Runnable expirationCleanupTask(ReentrantReadWriteLock snapshotLock) {
+        Lock readLock = snapshotLock.readLock();
+        return () -> {
+            readLock.lock();
+            try {
+                cleanupExpiredEntries();
+            } finally {
+                readLock.unlock();
+            }
+        };
     }
 }

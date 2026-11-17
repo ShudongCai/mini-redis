@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -25,7 +27,8 @@ class ActiveExpirationIntegrationTest {
         assertTrue(storage.set(bytes("persistent"), bytes("kept")));
         clock.advanceMillis(2_000);
 
-        Runnable cleanupTask = storage.expirationCleanupTask();
+        ReentrantReadWriteLock snapshotLock = new ReentrantReadWriteLock(true);
+        Runnable cleanupTask = storage.expirationCleanupTask(snapshotLock);
         CountDownLatch cleanupCompleted = new CountDownLatch(1);
         try (BackgroundScheduler scheduler = new BackgroundScheduler()) {
             scheduler.scheduledWithFixedDelay(() -> {
@@ -42,6 +45,28 @@ class ActiveExpirationIntegrationTest {
         assertEquals(Optional.empty(), storage.get(bytes("expires-second")));
         assertEquals(Optional.of(bytes("live")), storage.get(bytes("still-live")));
         assertEquals(Optional.of(bytes("kept")), storage.get(bytes("persistent")));
+    }
+
+    @Test
+    void shouldWaitForSnapshotWriteLockBeforeCleaningExpiredEntries() throws Exception {
+        InMemoryStorage storage = new InMemoryStorage();
+        ReentrantReadWriteLock snapshotLock = new ReentrantReadWriteLock(true);
+        FutureTask<Void> cleanup = new FutureTask<>(storage.expirationCleanupTask(snapshotLock), null);
+        Thread worker = Thread.ofVirtual().unstarted(cleanup);
+
+        snapshotLock.writeLock().lock();
+        try {
+            worker.start();
+            long deadline = System.nanoTime() + SECONDS.toNanos(5);
+            while (!snapshotLock.hasQueuedThread(worker) && !cleanup.isDone() && System.nanoTime() - deadline < 0) {
+                Thread.sleep(1);
+            }
+            assertTrue(snapshotLock.hasQueuedThread(worker), "Cleanup should wait for SAVE to release the lock");
+        } finally {
+            snapshotLock.writeLock().unlock();
+        }
+
+        cleanup.get(5, SECONDS);
     }
 
     private static RedisBytes bytes(String value) {
