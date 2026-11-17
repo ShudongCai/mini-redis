@@ -1,6 +1,7 @@
-package dev.learning.storage;
+package dev.learning.storage.valueStorage;
 
 import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.redisValue.SetValue;
 import dev.learning.storage.model.StoredEntry;
@@ -12,14 +13,14 @@ import java.util.Set;
 
 import static dev.learning.storage.StorageContext.isExpired;
 
-final class SetStorage {
+public final class SetStorage {
     private final StorageContext context;
 
-    SetStorage(StorageContext context) {
+    public SetStorage(StorageContext context) {
         this.context = context;
     }
 
-    long sadd(RedisBytes key, List<RedisBytes> values) {
+    public long sadd(RedisBytes key, List<RedisBytes> values) {
         if (key == null || values == null || values.isEmpty() || values.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("Invalid SADD arguments");
         }
@@ -53,7 +54,7 @@ final class SetStorage {
         return result[0];
     }
 
-    long srem(RedisBytes key, List<RedisBytes> members) {
+    public long srem(RedisBytes key, List<RedisBytes> members) {
         if (key == null || members == null || members.isEmpty() || members.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("Invalid SREM arguments");
         }
@@ -79,7 +80,7 @@ final class SetStorage {
         return result[0];
     }
 
-    long scard(RedisBytes key) {
+    public long scard(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Invalid SCARD arguments");
         }
@@ -102,7 +103,7 @@ final class SetStorage {
         return result[0];
     }
 
-    Set<RedisBytes> smembers(RedisBytes key) {
+    public Set<RedisBytes> smembers(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Invalid SMEMBERS arguments");
         }
@@ -125,7 +126,7 @@ final class SetStorage {
         return result;
     }
 
-    int sismember(RedisBytes key, RedisBytes value) {
+    public int sismember(RedisBytes key, RedisBytes value) {
         if (key == null || value == null) {
             throw new IllegalArgumentException("Invalid SISMEMBER arguments");
         }

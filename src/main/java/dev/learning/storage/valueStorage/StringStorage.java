@@ -1,7 +1,8 @@
-package dev.learning.storage;
+package dev.learning.storage.valueStorage;
 
 import dev.learning.command.SetOptions;
 import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
 import dev.learning.storage.model.redisValue.StringValue;
@@ -10,14 +11,14 @@ import java.util.Optional;
 
 import static dev.learning.storage.StorageContext.isExpired;
 
-final class StringStorage {
+public final class StringStorage {
     private final StorageContext context;
 
-    StringStorage(StorageContext context) {
+    public StringStorage(StorageContext context) {
         this.context = context;
     }
 
-    Optional<RedisBytes> get(RedisBytes key) {
+    public Optional<RedisBytes> get(RedisBytes key) {
         StoredEntry entry = context.getLiveEntry(key);
 
         if (entry == null) {
@@ -31,7 +32,7 @@ final class StringStorage {
         throw new WrongTypeException();
     }
 
-    boolean set(RedisBytes key, RedisBytes value) {
+    public boolean set(RedisBytes key, RedisBytes value) {
         if (key == null || value == null) {
             throw new IllegalArgumentException("Key or Value should not be null");
         }
@@ -40,7 +41,7 @@ final class StringStorage {
         return true;
     }
 
-    boolean set(RedisBytes key, RedisBytes value, SetOptions subOptions) {
+    public boolean set(RedisBytes key, RedisBytes value, SetOptions subOptions) {
         if (key == null || value == null || subOptions == null) {
             throw new IllegalArgumentException("Key, Value or SubOption should not be null");
         }

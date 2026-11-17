@@ -1,7 +1,8 @@
 
-package dev.learning.storage;
+package dev.learning.storage.valueStorage;
 
 import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.SortedSetEntry;
 import dev.learning.storage.model.redisValue.SortedSetValue;
@@ -13,11 +14,11 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortedSetStorage {
     private final StorageContext context;
 
-    SortedSetStorage(StorageContext context) {
+    public SortedSetStorage(StorageContext context) {
         this.context = context;
     }
 
-    long zadd(RedisBytes key, Map<RedisBytes, Double> values) {
+    public long zadd(RedisBytes key, Map<RedisBytes, Double> values) {
         if (key == null || values == null || values.isEmpty()) {
             throw new IllegalArgumentException("Invalid ZADD arguments");
         }
@@ -62,7 +63,7 @@ public class SortedSetStorage {
         return result[0];
     }
 
-    Optional<Double> zscore(RedisBytes key, RedisBytes member) {
+    public Optional<Double> zscore(RedisBytes key, RedisBytes member) {
         if (key == null) {
             throw new IllegalArgumentException("Invalid ZSCORE arguments");
         }
@@ -89,7 +90,7 @@ public class SortedSetStorage {
         return result.get();
     }
 
-    long zrem(RedisBytes key, List<RedisBytes> values) {
+    public long zrem(RedisBytes key, List<RedisBytes> values) {
         if (key == null || values == null || values.isEmpty() || values.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("Invalid ZREM arguments");
         }
@@ -119,7 +120,7 @@ public class SortedSetStorage {
         return result[0];
     }
 
-    List<RedisBytes> zrange(RedisBytes key, long start, long end) {
+    public List<RedisBytes> zrange(RedisBytes key, long start, long end) {
         if (key == null) {
             throw new IllegalArgumentException("Invalid ZRANGE arguments");
         }

@@ -23,7 +23,8 @@ public enum CommandType {
     ZADD("zadd"),
     ZSCORE("zscore"),
     ZREM("zrem"),
-    ZRANGE("zrange");
+    ZRANGE("zrange"),
+    SAVE("save");
 
 
     private final String value;

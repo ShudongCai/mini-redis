@@ -1,12 +1,14 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
+import dev.learning.persistence.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
+import dev.learning.storage.service.SnapshotService;
+import dev.learning.storage.valueStorage.*;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongSupplier;
 
 public class InMemoryStorage {
@@ -15,6 +17,7 @@ public class InMemoryStorage {
     private final SetStorage setStorage;
     private final KeyStorage keyStorage;
     private final SortedSetStorage sortedSetStorage;
+    private final SnapshotService snapshotService;
 
     public InMemoryStorage() {
         this(System::currentTimeMillis);
@@ -27,6 +30,7 @@ public class InMemoryStorage {
         this.setStorage = new SetStorage(context);
         this.keyStorage = new KeyStorage(context);
         this.sortedSetStorage = new SortedSetStorage(context);
+        this.snapshotService = new SnapshotService(context);
     }
 
     public Optional<RedisBytes> get(RedisBytes key) {
@@ -121,11 +125,27 @@ public class InMemoryStorage {
         return sortedSetStorage.zrange(key, start, end);
     }
 
+    public List<SnapshotEntry> exportSnapshot() {
+        return snapshotService.exportSnapshot();
+    }
+
+    public void restoreSnapshot(List<SnapshotEntry> snapshotEntries) {
+        snapshotService.restoreSnapshot(snapshotEntries);
+    }
+
     int cleanupExpiredEntries() {
         return keyStorage.cleanupExpiredEntries();
     }
 
-    public Runnable expirationCleanupTask() {
-        return this::cleanupExpiredEntries;
+    public Runnable expirationCleanupTask(ReentrantReadWriteLock snapshotLock) {
+        Lock readLock = snapshotLock.readLock();
+        return () -> {
+            readLock.lock();
+            try {
+                cleanupExpiredEntries();
+            } finally {
+                readLock.unlock();
+            }
+        };
     }
 }

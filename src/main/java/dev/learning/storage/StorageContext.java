@@ -1,12 +1,17 @@
 package dev.learning.storage;
 
+import dev.learning.persistence.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
+import dev.learning.storage.model.redisValue.RedisValue;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
-final class StorageContext {
+public final class StorageContext {
     private final ConcurrentHashMap<RedisBytes, StoredEntry> entries = new ConcurrentHashMap<>();
     private final LongSupplier currentTimeMillis;
 
@@ -15,19 +20,19 @@ final class StorageContext {
     }
 
     // Access mutable list and set contents only inside a per-key compute callback.
-    ConcurrentHashMap<RedisBytes, StoredEntry> entries() {
+    public ConcurrentHashMap<RedisBytes, StoredEntry> entries() {
         return entries;
     }
 
-    long now() {
+    public long now() {
         return currentTimeMillis.getAsLong();
     }
 
-    StoredEntry getLiveEntry(RedisBytes key) {
+    public StoredEntry getLiveEntry(RedisBytes key) {
         return entries.computeIfPresent(key, (k, entry) -> isExpired(entry, now()) ? null : entry);
     }
 
-    static boolean isExpired(StoredEntry entry, long now) {
+    public static boolean isExpired(StoredEntry entry, long now) {
         return entry.ex() != null && now >= entry.ex();
     }
 }

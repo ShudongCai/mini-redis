@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -17,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class CommandDispatcherTest {
     private final StorageTestClock clock = new StorageTestClock();
     private final InMemoryStorage storage = clock.newStorage();
-    private final CommandDispatcher dispatcher = new CommandDispatcher(storage);
+    private final ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock(true);
+    private final CommandDispatcher dispatcher = new CommandDispatcher(storage, reentrantReadWriteLock);
 
     @Test
     void shouldReturnPongWhenPingIsExecuted() {
