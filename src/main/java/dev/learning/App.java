@@ -9,13 +9,15 @@ import dev.learning.storage.InMemoryStorage;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class App {
     public static void main(String[] args) throws IOException {
         InMemoryStorage storage = new InMemoryStorage();
         RespDecoder decoder = new RespDecoder();
         RespEncoder encoder = new RespEncoder();
-        CommandDispatcher dispatcher = new CommandDispatcher(storage);
+        ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock(true);
+        CommandDispatcher dispatcher = new CommandDispatcher(storage, reentrantReadWriteLock);
 
         try (
                 BackgroundScheduler scheduler = new BackgroundScheduler();

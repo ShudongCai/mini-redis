@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -74,7 +75,7 @@ class MiniRedisServerTest {
     }
 
     private static MiniRedisServer newServer(RespDecoder decoder) throws IOException {
-        return new MiniRedisServer(0, decoder, new RespEncoder(), new CommandDispatcher(new InMemoryStorage()));
+        return new MiniRedisServer(0, decoder, new RespEncoder(), new CommandDispatcher(new InMemoryStorage(), new ReentrantReadWriteLock(true)));
     }
 
     private static FutureTask<Void> acceptLoopTask(MiniRedisServer server) {

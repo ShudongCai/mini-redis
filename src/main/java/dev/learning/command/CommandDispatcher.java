@@ -4,8 +4,11 @@ import dev.learning.command.handler.*;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class CommandDispatcher {
     private final SetCommandHandler setCommandHandler;
@@ -13,15 +16,20 @@ public class CommandDispatcher {
     private final KeyCommandHandler keyCommandHandler;
     private final StringCommandHandler stringCommandHandler;
     private final SortedSetCommandHandler sortedSetCommandHandler;
+    private final SnapshotCommandHandler snapshotCommandHandler;
+    private final ReentrantReadWriteLock snapshotLock;
 
     public CommandDispatcher(
-            InMemoryStorage storage
+            InMemoryStorage storage,
+            ReentrantReadWriteLock snapshotLock
     ) {
         this.setCommandHandler = new SetCommandHandler(storage);
         this.listCommandHandler = new ListCommandHandler(storage);
         this.keyCommandHandler = new KeyCommandHandler(storage);
         this.stringCommandHandler = new StringCommandHandler(storage);
         this.sortedSetCommandHandler = new SortedSetCommandHandler(storage);
+        this.snapshotCommandHandler = new SnapshotCommandHandler(storage);
+        this.snapshotLock = snapshotLock;
     }
 
     public RespValue dispatch(RespValue request) {
@@ -50,38 +58,51 @@ public class CommandDispatcher {
         }
 
         CommandType type = CommandArguments.isValidCommand(command.get());
+
         if (type == null) {
             return new RespValue.ErrorValue("Invalid Command type");
         }
 
-        return switch (type) {
-            case CommandType.SET -> stringCommandHandler.executeSetCommand(elements);
-            case CommandType.DEL -> keyCommandHandler.executeDelCommand(elements);
-            case CommandType.EXISTS -> keyCommandHandler.executeExistCommand(elements);
-            case CommandType.GET -> stringCommandHandler.executeGetCommand(elements);
-            case CommandType.TTL -> keyCommandHandler.executeTTLCommand(elements);
-            case CommandType.EXPIRE -> keyCommandHandler.executeExpireCommand(elements);
-            case CommandType.PERSIST -> keyCommandHandler.executePersistCommand(elements);
-            case CommandType.LPUSH -> listCommandHandler.executeLPushCommand(elements);
-            case CommandType.RPUSH -> listCommandHandler.executeRPushCommand(elements);
-            case CommandType.RPOP -> listCommandHandler.executeRPopCommand(elements);
-            case CommandType.LPOP -> listCommandHandler.executeLPopCommand(elements);
-            case CommandType.LLEN -> listCommandHandler.executeLlenCommand(elements);
-            case CommandType.LRANGE -> listCommandHandler.executeLrangeCommand(elements);
-            case CommandType.SADD -> setCommandHandler.executeSaddCommand(elements);
-            case CommandType.SCARD -> setCommandHandler.executeScardCommand(elements);
-            case CommandType.SMEMBERS -> setCommandHandler.executeSmembersCommand(elements);
-            case CommandType.SREM -> setCommandHandler.executeSremCommand(elements);
-            case CommandType.SISMEMBER -> setCommandHandler.executeSismemberCommand(elements);
-            case CommandType.ZADD -> sortedSetCommandHandler.executeZaddCommand(elements);
-            case CommandType.ZRANGE -> sortedSetCommandHandler.executeZrangeCommand(elements);
-            case CommandType.ZREM -> sortedSetCommandHandler.executeZremCommand(elements);
-            case CommandType.ZSCORE -> sortedSetCommandHandler.executeZscoreCommand(elements);
-            case PING -> elements.size() == 1
-                    ? new RespValue.SimpleString("PONG")
-                    : new RespValue.ErrorValue(
-                    "ERR wrong number of arguments for 'ping' command"
-            );
-        };
+        Lock lock = type == CommandType.SAVE
+                ? snapshotLock.writeLock() : snapshotLock.readLock();
+
+        lock.lock();
+
+        try {
+            return switch (type) {
+                case CommandType.SET -> stringCommandHandler.executeSetCommand(elements);
+                case CommandType.DEL -> keyCommandHandler.executeDelCommand(elements);
+                case CommandType.EXISTS -> keyCommandHandler.executeExistCommand(elements);
+                case CommandType.GET -> stringCommandHandler.executeGetCommand(elements);
+                case CommandType.TTL -> keyCommandHandler.executeTTLCommand(elements);
+                case CommandType.EXPIRE -> keyCommandHandler.executeExpireCommand(elements);
+                case CommandType.PERSIST -> keyCommandHandler.executePersistCommand(elements);
+                case CommandType.LPUSH -> listCommandHandler.executeLPushCommand(elements);
+                case CommandType.RPUSH -> listCommandHandler.executeRPushCommand(elements);
+                case CommandType.RPOP -> listCommandHandler.executeRPopCommand(elements);
+                case CommandType.LPOP -> listCommandHandler.executeLPopCommand(elements);
+                case CommandType.LLEN -> listCommandHandler.executeLlenCommand(elements);
+                case CommandType.LRANGE -> listCommandHandler.executeLrangeCommand(elements);
+                case CommandType.SADD -> setCommandHandler.executeSaddCommand(elements);
+                case CommandType.SCARD -> setCommandHandler.executeScardCommand(elements);
+                case CommandType.SMEMBERS -> setCommandHandler.executeSmembersCommand(elements);
+                case CommandType.SREM -> setCommandHandler.executeSremCommand(elements);
+                case CommandType.SISMEMBER -> setCommandHandler.executeSismemberCommand(elements);
+                case CommandType.ZADD -> sortedSetCommandHandler.executeZaddCommand(elements);
+                case CommandType.ZRANGE -> sortedSetCommandHandler.executeZrangeCommand(elements);
+                case CommandType.ZREM -> sortedSetCommandHandler.executeZremCommand(elements);
+                case CommandType.ZSCORE -> sortedSetCommandHandler.executeZscoreCommand(elements);
+                case CommandType.SAVE -> snapshotCommandHandler.executeSaveCommand();
+                case PING -> elements.size() == 1
+                        ? new RespValue.SimpleString("PONG")
+                        : new RespValue.ErrorValue(
+                        "ERR wrong number of arguments for 'ping' command"
+                );
+            };
+        } catch (IOException e) {
+            return new RespValue.ErrorValue("ERR snapshot failed");
+        } finally {
+            lock.unlock();
+        }
     }
 }

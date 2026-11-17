@@ -1,18 +1,19 @@
-package dev.learning.storage;
+package dev.learning.storage.valueStorage;
 
+import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
 
 import static dev.learning.storage.StorageContext.isExpired;
 
-final class KeyStorage {
+public final class KeyStorage {
     private final StorageContext context;
 
-    KeyStorage(StorageContext context) {
+    public KeyStorage(StorageContext context) {
         this.context = context;
     }
 
-    int del(RedisBytes key) {
+    public int del(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -28,14 +29,14 @@ final class KeyStorage {
         return deleted[0] ? 1 : 0;
     }
 
-    boolean exists(RedisBytes key) {
+    public boolean exists(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
         return context.getLiveEntry(key) != null;
     }
 
-    long ttl(RedisBytes key) {
+    public long ttl(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -63,7 +64,7 @@ final class KeyStorage {
         return result[0];
     }
 
-    int expire(RedisBytes key, long seconds) {
+    public int expire(RedisBytes key, long seconds) {
         if (key == null) {
             throw new IllegalArgumentException("Key or value is null");
         }
@@ -94,7 +95,7 @@ final class KeyStorage {
         return result[0];
     }
 
-    int persist(RedisBytes key) {
+    public int persist(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("The key is null");
         }
@@ -117,7 +118,7 @@ final class KeyStorage {
         return result[0];
     }
 
-    int cleanupExpiredEntries() {
+    public int cleanupExpiredEntries() {
         int[] cleanupEntries = {0};
         for (RedisBytes key : context.entries().keySet()) {
             context.entries().computeIfPresent(key, (k, entry) -> {

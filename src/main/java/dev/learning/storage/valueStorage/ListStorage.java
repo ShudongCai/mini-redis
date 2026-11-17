@@ -1,6 +1,7 @@
-package dev.learning.storage;
+package dev.learning.storage.valueStorage;
 
 import dev.learning.exception.WrongTypeException;
+import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.redisValue.ListValue;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
@@ -14,18 +15,18 @@ import java.util.Optional;
 
 import static dev.learning.storage.StorageContext.isExpired;
 
-final class ListStorage {
+public final class ListStorage {
     private final StorageContext context;
 
-    ListStorage(StorageContext context) {
+    public ListStorage(StorageContext context) {
         this.context = context;
     }
 
-    long lpush(RedisBytes key, List<RedisBytes> values) {
+    public long lpush(RedisBytes key, List<RedisBytes> values) {
         return push(key, values, true);
     }
 
-    long rpush(RedisBytes key, List<RedisBytes> values) {
+    public long rpush(RedisBytes key, List<RedisBytes> values) {
         return push(key, values, false);
     }
 
@@ -75,11 +76,11 @@ final class ListStorage {
         return result[0];
     }
 
-    Optional<RedisBytes> lpop(RedisBytes key) {
+    public Optional<RedisBytes> lpop(RedisBytes key) {
         return pop(key, true);
     }
 
-    Optional<RedisBytes> rpop(RedisBytes key) {
+    public Optional<RedisBytes> rpop(RedisBytes key) {
         return pop(key, false);
     }
 
@@ -118,7 +119,7 @@ final class ListStorage {
         return result[0] == null ? Optional.empty() : Optional.of(result[0]);
     }
 
-    int llen(RedisBytes key) {
+    public int llen(RedisBytes key) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
@@ -141,7 +142,7 @@ final class ListStorage {
         return result[0];
     }
 
-    List<RedisBytes> lrange(RedisBytes key, long start, long end) {
+    public List<RedisBytes> lrange(RedisBytes key, long start, long end) {
         if (key == null) {
             throw new IllegalArgumentException("Key should not be null");
         }
