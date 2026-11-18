@@ -1,7 +1,7 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
-import dev.learning.persistence.snapshot.SnapshotEntry;
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.persistence.SnapshotService;
 import dev.learning.storage.valueStorage.*;

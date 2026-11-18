@@ -1,4 +1,4 @@
-package dev.learning.persistence.snapshot;
+package dev.learning.persistence.model;
 
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.redisValue.RedisValue;

@@ -1,5 +1,6 @@
 package dev.learning.persistence.snapshot;
 
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.SortedSetEntry;
 import dev.learning.storage.model.redisValue.*;

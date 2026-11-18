@@ -1,6 +1,6 @@
 package dev.learning.command.handler;
 
-import dev.learning.persistence.snapshot.SnapshotEntry;
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.persistence.snapshot.SnapshotWriter;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;

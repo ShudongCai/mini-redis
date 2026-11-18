@@ -1,6 +1,6 @@
 package dev.learning.persistence;
 
-import dev.learning.persistence.snapshot.SnapshotEntry;
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.persistence.snapshot.SnapshotWriter;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.redisValue.ListValue;

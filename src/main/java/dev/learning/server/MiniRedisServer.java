@@ -1,6 +1,5 @@
 package dev.learning.server;
 
-import dev.learning.command.CommandDispatcher;
 import dev.learning.protocol.RespDecoder;
 import dev.learning.protocol.RespEncoder;
 import dev.learning.protocol.RespValue;
@@ -15,24 +14,28 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public class MiniRedisServer implements AutoCloseable{
     private final ServerSocket serverSocket;
     private final RespDecoder respDecoder;
     private final RespEncoder respEncoder;
-    private final CommandDispatcher dispatcher;
+    private final Function<RespValue, RespValue> commandExecutor;
     private final ExecutorService threadPools;
 
-    public MiniRedisServer(int port, RespDecoder respDecoder, RespEncoder respEncoder, CommandDispatcher dispatcher) throws IOException {
+    public MiniRedisServer(int port,
+                           RespDecoder respDecoder,
+                           RespEncoder respEncoder,
+                           Function<RespValue, RespValue> commandExecutor) throws IOException {
         serverSocket = new ServerSocket(port);
         this.respDecoder = respDecoder;
         this.respEncoder = respEncoder;
-        this.dispatcher = dispatcher;
+        this.commandExecutor = commandExecutor;
         this.threadPools = Executors.newVirtualThreadPerTaskExecutor();
     }
 
-    public MiniRedisServer(RespDecoder respDecoder, RespEncoder respEncoder, CommandDispatcher dispatcher) throws IOException{
-        this(6380, respDecoder, respEncoder, dispatcher);
+    public MiniRedisServer(RespDecoder respDecoder, RespEncoder respEncoder, Function<RespValue, RespValue> commandExecutor) throws IOException{
+        this(6380, respDecoder, respEncoder, commandExecutor);
     }
 
     int getLocalPort() {
@@ -83,7 +86,7 @@ public class MiniRedisServer implements AutoCloseable{
                     break;
                 }
 
-                RespValue dispatchedValue = dispatcher.dispatch(decodeValue);
+                RespValue dispatchedValue = commandExecutor.apply(decodeValue);
                 respEncoder.encode(dispatchedValue, output);
                 output.flush();
             }
