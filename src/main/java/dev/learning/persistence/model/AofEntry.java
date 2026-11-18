@@ -2,12 +2,8 @@ package dev.learning.persistence.model;
 
 import dev.learning.storage.model.RedisBytes;
 
-import java.util.List;
+public sealed interface AofEntry {
+    record Replace(SnapshotEntry entry) implements AofEntry {}
 
-public record AofEntry (
-        List<RedisBytes> arguments
-) {
-    public AofEntry {
-        arguments = List.copyOf(arguments);
-    }
+    record Delete(RedisBytes key) implements AofEntry {}
 }

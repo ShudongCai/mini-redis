@@ -125,6 +125,10 @@ public class InMemoryStorage {
         return sortedSetStorage.zrange(key, start, end);
     }
 
+    public Optional<SnapshotEntry> captureSnapshotEntry(RedisBytes key) {
+        return snapshotService.captureEntry(key);
+    }
+
     public List<SnapshotEntry> exportSnapshot() {
         return snapshotService.exportSnapshot();
     }

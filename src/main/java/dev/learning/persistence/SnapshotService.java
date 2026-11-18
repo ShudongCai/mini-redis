@@ -9,12 +9,19 @@ import dev.learning.storage.model.redisValue.RedisValue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class SnapshotService {
     private final StorageContext storageContext;
 
     public SnapshotService(StorageContext storageContext) {
         this.storageContext = storageContext;
+    }
+
+    // Callers hold the write lock through serialization of mutable values.
+    public Optional<SnapshotEntry> captureEntry(RedisBytes key) {
+        return Optional.ofNullable(storageContext.entries().get(key))
+                .map(entry -> new SnapshotEntry(key, entry.value(), entry.ex()));
     }
 
     public List<SnapshotEntry> exportSnapshot() {
