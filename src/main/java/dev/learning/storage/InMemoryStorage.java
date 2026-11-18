@@ -1,9 +1,9 @@
 package dev.learning.storage;
 
 import dev.learning.command.SetOptions;
-import dev.learning.persistence.SnapshotEntry;
+import dev.learning.persistence.snapshot.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
-import dev.learning.storage.service.SnapshotService;
+import dev.learning.persistence.SnapshotService;
 import dev.learning.storage.valueStorage.*;
 
 import java.util.*;

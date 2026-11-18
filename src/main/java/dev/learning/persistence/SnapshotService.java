@@ -1,6 +1,6 @@
-package dev.learning.storage.service;
+package dev.learning.persistence;
 
-import dev.learning.persistence.SnapshotEntry;
+import dev.learning.persistence.snapshot.SnapshotEntry;
 import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;

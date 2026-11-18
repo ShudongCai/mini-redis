@@ -1,4 +1,4 @@
-package dev.learning.persistence;
+package dev.learning.persistence.snapshot;
 
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.SortedSetEntry;

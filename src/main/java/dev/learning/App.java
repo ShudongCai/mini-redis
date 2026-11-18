@@ -1,8 +1,8 @@
 package dev.learning;
 
 import dev.learning.command.CommandDispatcher;
-import dev.learning.persistence.SnapshotEntry;
-import dev.learning.persistence.SnapshotReader;
+import dev.learning.persistence.snapshot.SnapshotEntry;
+import dev.learning.persistence.snapshot.SnapshotReader;
 import dev.learning.protocol.RespDecoder;
 import dev.learning.protocol.RespEncoder;
 import dev.learning.scheduler.BackgroundScheduler;
