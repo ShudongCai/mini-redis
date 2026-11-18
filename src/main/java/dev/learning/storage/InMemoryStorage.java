@@ -11,6 +11,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongSupplier;
 
+/**
+ * Delegates type-specific operations over a shared concurrent keyspace.
+ */
 public class InMemoryStorage {
     private final StringStorage stringStorage;
     private final ListStorage listStorage;
@@ -41,6 +44,9 @@ public class InMemoryStorage {
         return stringStorage.set(key, value);
     }
 
+    /**
+     * Applies the existence condition and any expiration atomically for the key.
+     */
     public boolean set(RedisBytes key, RedisBytes value, SetOptions subOptions) {
         return stringStorage.set(key, value, subOptions);
     }
@@ -65,6 +71,9 @@ public class InMemoryStorage {
         return listStorage.llen(key);
     }
 
+    /**
+     * Returns a copy of an inclusive list range, interpreting negative indexes from the end.
+     */
     public List<RedisBytes> lrange(RedisBytes key, long start, long end) {
         return listStorage.lrange(key, start, end);
     }
@@ -97,10 +106,16 @@ public class InMemoryStorage {
         return keyStorage.exists(key);
     }
 
+    /**
+     * Returns the remaining lifetime rounded to the nearest second, {@code -1} for persistent keys, or {@code -2} for missing or expired keys.
+     */
     public long ttl(RedisBytes key) {
         return keyStorage.ttl(key);
     }
 
+    /**
+     * Sets a live key's expiration, deleting the key when the duration is zero or negative.
+     */
     public int expire(RedisBytes key, long seconds) {
         return keyStorage.expire(key, seconds);
     }
@@ -109,6 +124,9 @@ public class InMemoryStorage {
         return keyStorage.persist(key);
     }
 
+    /**
+     * Adds members or updates scores, returning the number of new members.
+     */
     public long zadd(RedisBytes key, Map<RedisBytes, Double> values) {
         return sortedSetStorage.zadd(key, values);
     }
@@ -121,18 +139,31 @@ public class InMemoryStorage {
         return sortedSetStorage.zrem(key, values);
     }
 
+    /**
+     * Returns an inclusive rank range in score order, breaking ties by unsigned byte order.
+     */
     public List<RedisBytes> zrange(RedisBytes key, long start, long end) {
         return sortedSetStorage.zrange(key, start, end);
     }
 
+    /**
+     * Captures a stored entry for AOF, including expired entries still in the keyspace.
+     * Hold the persistence write lock through capture and serialization of mutable values.
+     */
     public Optional<SnapshotEntry> captureSnapshotEntry(RedisBytes key) {
         return snapshotService.captureEntry(key);
     }
 
+    /**
+     * Exports live entries, requiring the caller to hold the persistence write lock through serialization during server operation.
+     */
     public List<SnapshotEntry> exportSnapshot() {
         return snapshotService.exportSnapshot();
     }
 
+    /**
+     * Merges unexpired entries into storage while the caller has exclusive access to the keyspace.
+     */
     public void restoreSnapshot(List<SnapshotEntry> snapshotEntries) {
         snapshotService.restoreSnapshot(snapshotEntries);
     }
@@ -141,6 +172,9 @@ public class InMemoryStorage {
         return keyStorage.cleanupExpiredEntries();
     }
 
+    /**
+     * Creates a cleanup task that uses the shared read lock to coordinate with snapshot and AOF writes.
+     */
     public Runnable expirationCleanupTask(ReentrantReadWriteLock snapshotLock) {
         Lock readLock = snapshotLock.readLock();
         return () -> {

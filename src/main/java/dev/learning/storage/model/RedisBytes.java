@@ -3,6 +3,9 @@ package dev.learning.storage.model;
 import java.util.Arrays;
 import java.util.Objects;
 
+/**
+ * An immutable binary value with content-based equality.
+ */
 public final class RedisBytes {
     private final byte[] bytes;
 

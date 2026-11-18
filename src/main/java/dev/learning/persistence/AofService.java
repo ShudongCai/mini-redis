@@ -17,6 +17,9 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 
+/**
+ * Owns an exclusive AOF file lock and tracks whether persistence is available.
+ */
 public final class AofService implements AutoCloseable {
     private static final Set<Path> OPEN_FILES = new HashSet<>();
 
@@ -34,6 +37,9 @@ public final class AofService implements AutoCloseable {
         this.ownedFile = ownedFile;
     }
 
+    /**
+     * Replays the log, truncates an incomplete final record, and prepares the file for appends.
+     */
     public static AofService open(Path path, Consumer<AofEntry> replay) throws IOException {
         Path target = path.toAbsolutePath();
         Files.createDirectories(target.getParent());
@@ -91,7 +97,9 @@ public final class AofService implements AutoCloseable {
         return available;
     }
 
-    // The dispatcher holds the global write lock through append and force.
+    /**
+     * Appends and forces a record while the caller holds the persistence write lock, disabling the service on I/O failure.
+     */
     public void append(AofEntry entry) throws IOException {
         if (!available) {
             throw new IOException("AOF persistence is unavailable");

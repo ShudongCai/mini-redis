@@ -16,6 +16,9 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+/**
+ * Serves RESP2 clients on one virtual thread per connection.
+ */
 public class MiniRedisServer implements AutoCloseable{
     private final ServerSocket serverSocket;
     private final RespDecoder respDecoder;
@@ -42,6 +45,9 @@ public class MiniRedisServer implements AutoCloseable{
         return serverSocket.getLocalPort();
     }
 
+    /**
+     * Accepts and dispatches client connections until the listening socket closes.
+     */
     public void acceptAndResponse() throws IOException {
         System.out.println("Server listening on port " + serverSocket.getLocalPort());
 
@@ -95,6 +101,9 @@ public class MiniRedisServer implements AutoCloseable{
         }
     }
 
+    /**
+     * Closes the listener, interrupts client handlers, and waits up to ten seconds for them to exit.
+     */
     @Override
     public void close() throws IOException {
         try {

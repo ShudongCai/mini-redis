@@ -13,6 +13,9 @@ import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * Dispatches RESP commands using a shared read lock for ordinary storage operations and a write lock for {@code SAVE} and AOF mutations.
+ */
 public class CommandDispatcher {
     private final SetCommandHandler setCommandHandler;
     private final ListCommandHandler listCommandHandler;
@@ -43,6 +46,9 @@ public class CommandDispatcher {
         this.snapshotLock = snapshotLock;
     }
 
+    /**
+     * Executes a client request and persists any required AOF record before returning a successful reply.
+     */
     public RespValue dispatch(RespValue request) {
         if (request instanceof RespValue.BulkString(byte[] value) && value != null && value.length != 0) {
             String bulkValue = new String(value, StandardCharsets.US_ASCII);

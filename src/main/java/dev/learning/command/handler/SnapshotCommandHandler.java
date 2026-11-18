@@ -12,6 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
+/**
+ * Handles {@code SAVE} by atomically replacing the snapshot file while the caller holds the persistence write lock.
+ */
 public class SnapshotCommandHandler {
     private final InMemoryStorage inMemoryStorage;
     private final Path snapshotPath;

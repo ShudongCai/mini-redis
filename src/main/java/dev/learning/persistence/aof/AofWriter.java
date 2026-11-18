@@ -11,6 +11,9 @@ import java.nio.channels.FileChannel;
 import java.util.List;
 import java.util.zip.CRC32;
 
+/**
+ * Writes checksummed AOF records and owns the underlying file channel.
+ */
 public final class AofWriter implements AutoCloseable {
     private final FileChannel channel;
 
@@ -18,6 +21,9 @@ public final class AofWriter implements AutoCloseable {
         this.channel = channel;
     }
 
+    /**
+     * Writes one record at the channel's current position and forces it to disk before returning.
+     */
     public void append(AofEntry entry) throws IOException {
         Payload payload = new Payload();
         switch (entry) {

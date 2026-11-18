@@ -4,8 +4,16 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Encodes RESP2 frames to a caller-owned stream without flushing it.
+ */
 public class RespEncoder {
 
+    /**
+     * Writes one RESP2 frame, preserving bulk string bytes verbatim.
+     *
+     * @throws IllegalArgumentException if a simple string or error line is null or contains CR or LF
+     */
     public void encode(RespValue value, OutputStream output) throws IOException {
         switch (value) {
             case RespValue.SimpleString s -> encodeSimpleString(s, output);

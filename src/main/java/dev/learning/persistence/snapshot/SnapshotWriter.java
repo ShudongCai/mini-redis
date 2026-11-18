@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Encodes snapshots to a caller-owned stream.
+ */
 public class SnapshotWriter {
     private final DataOutputStream writer;
 
@@ -21,6 +24,9 @@ public class SnapshotWriter {
         this.writer = new DataOutputStream(stream);
     }
 
+    /**
+     * Writes and flushes one snapshot, preserving the absolute expiration timestamps.
+     */
     public void write(List<SnapshotEntry> entries) throws IOException {
         writeHeader(entries.size());
         for (SnapshotEntry entry : entries) {

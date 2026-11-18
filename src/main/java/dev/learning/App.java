@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * Recovers the selected persistence mode before starting the server.
+ */
 public class App {
     public static void main(String[] args) throws IOException {
         boolean enableAof = args.length == 1 && args[0].equals("--aof");

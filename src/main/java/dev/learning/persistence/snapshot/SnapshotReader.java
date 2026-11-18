@@ -10,6 +10,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 
+/**
+ * Decodes a versioned snapshot from a caller-owned stream.
+ */
 public class SnapshotReader {
     private static final int MAX_BINARY_LENGTH = 16 * 1024 * 1024;
 
@@ -19,6 +22,9 @@ public class SnapshotReader {
         this.dataInputStream = new DataInputStream(inputStream);
     }
 
+    /**
+     * Reads and validates a complete snapshot, rejecting trailing bytes.
+     */
     public List<SnapshotEntry> read() throws IOException {
         List<SnapshotEntry> snapshotData = new ArrayList<>();
         int entryCounts = readHeader();

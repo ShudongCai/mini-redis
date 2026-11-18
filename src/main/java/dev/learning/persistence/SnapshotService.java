@@ -18,7 +18,10 @@ public class SnapshotService {
         this.storageContext = storageContext;
     }
 
-    // Callers hold the write lock through serialization of mutable values.
+    /**
+     * Captures the stored value and deadline, sharing mutable values with the keyspace.
+     * Hold the persistence write lock through serialization during server operation.
+     */
     public Optional<SnapshotEntry> captureEntry(RedisBytes key) {
         return Optional.ofNullable(storageContext.entries().get(key))
                 .map(entry -> new SnapshotEntry(key, entry.value(), entry.ex()));

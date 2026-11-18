@@ -14,8 +14,16 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.zip.CRC32;
 
+/**
+ * Validates framed AOF records from a caller-owned file channel.
+ */
 public final class AofReader {
-    // Return the end of the last complete record so startup can remove an interrupted tail.
+    /**
+     * Applies complete records in file order, stopping at an incomplete tail.
+     *
+     * @return the byte offset immediately after the last complete record
+     * @throws IOException if a record is corrupt or the file cannot be read
+     */
     public long replay(FileChannel channel, Consumer<AofEntry> apply) throws IOException {
         channel.position(0);
         long size = channel.size();
