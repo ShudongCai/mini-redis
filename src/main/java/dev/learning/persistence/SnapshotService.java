@@ -1,6 +1,6 @@
-package dev.learning.storage.service;
+package dev.learning.persistence;
 
-import dev.learning.persistence.SnapshotEntry;
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.storage.StorageContext;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.StoredEntry;
@@ -9,12 +9,22 @@ import dev.learning.storage.model.redisValue.RedisValue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class SnapshotService {
     private final StorageContext storageContext;
 
     public SnapshotService(StorageContext storageContext) {
         this.storageContext = storageContext;
+    }
+
+    /**
+     * Captures the stored value and deadline, sharing mutable values with the keyspace.
+     * Hold the persistence write lock through serialization during server operation.
+     */
+    public Optional<SnapshotEntry> captureEntry(RedisBytes key) {
+        return Optional.ofNullable(storageContext.entries().get(key))
+                .map(entry -> new SnapshotEntry(key, entry.value(), entry.ex()));
     }
 
     public List<SnapshotEntry> exportSnapshot() {

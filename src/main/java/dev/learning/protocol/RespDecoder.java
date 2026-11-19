@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Decodes RESP2 with bounds on frame size, payload size, and array nesting.
+ */
 public class RespDecoder {
 
     private static final int MAX_READ_VALUE = 16 * 1024;
@@ -17,6 +20,12 @@ public class RespDecoder {
     private static final int MAX_NESTING_DEPTH = 32;
     private static final int MAX_FRAME_BYTES = 256 * 1024;
 
+    /**
+     * Reads one RESP2 value from a caller-owned stream.
+     *
+     * @return the decoded value, or {@code null} at EOF before the frame
+     * @throws IOException if the frame is invalid, truncated, or unreadable
+     */
     public RespValue readAndExecuteRespMessage(InputStream input)
             throws IOException {
 

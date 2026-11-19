@@ -1,7 +1,7 @@
 package dev.learning.command.handler;
 
-import dev.learning.persistence.SnapshotEntry;
-import dev.learning.persistence.SnapshotWriter;
+import dev.learning.persistence.model.SnapshotEntry;
+import dev.learning.persistence.snapshot.SnapshotWriter;
 import dev.learning.protocol.RespValue;
 import dev.learning.storage.InMemoryStorage;
 
@@ -12,6 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
+/**
+ * Handles {@code SAVE} by atomically replacing the snapshot file while the caller holds the persistence write lock.
+ */
 public class SnapshotCommandHandler {
     private final InMemoryStorage inMemoryStorage;
     private final Path snapshotPath;

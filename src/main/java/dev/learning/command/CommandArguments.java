@@ -57,6 +57,9 @@ public class CommandArguments {
         return values;
     }
 
+    /**
+     * Extracts text from an ASCII RESP string, returning empty for other values.
+     */
     public static Optional<String> extractAsciiText(RespValue request) {
         if (request instanceof RespValue.BulkString(byte[] value)
                 && value != null) {

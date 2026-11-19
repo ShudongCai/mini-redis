@@ -1,5 +1,6 @@
-package dev.learning.persistence;
+package dev.learning.persistence.snapshot;
 
+import dev.learning.persistence.model.SnapshotEntry;
 import dev.learning.storage.model.RedisBytes;
 import dev.learning.storage.model.redisValue.ListValue;
 import dev.learning.storage.model.redisValue.SetValue;
@@ -13,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Encodes snapshots to a caller-owned stream.
+ */
 public class SnapshotWriter {
     private final DataOutputStream writer;
 
@@ -20,6 +24,9 @@ public class SnapshotWriter {
         this.writer = new DataOutputStream(stream);
     }
 
+    /**
+     * Writes and flushes one snapshot, preserving the absolute expiration timestamps.
+     */
     public void write(List<SnapshotEntry> entries) throws IOException {
         writeHeader(entries.size());
         for (SnapshotEntry entry : entries) {

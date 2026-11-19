@@ -75,7 +75,7 @@ class MiniRedisServerTest {
     }
 
     private static MiniRedisServer newServer(RespDecoder decoder) throws IOException {
-        return new MiniRedisServer(0, decoder, new RespEncoder(), new CommandDispatcher(new InMemoryStorage(), new ReentrantReadWriteLock(true)));
+        return new MiniRedisServer(0, decoder, new RespEncoder(), new CommandDispatcher(new InMemoryStorage(), new ReentrantReadWriteLock(true))::dispatch);
     }
 
     private static FutureTask<Void> acceptLoopTask(MiniRedisServer server) {
